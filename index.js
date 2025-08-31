@@ -1,11 +1,10 @@
-// 猫神主Bot - 管理機能統合版
+// 猫神主Bot - Webhook修正版
 require('dotenv').config();
 const express = require('express');
 const line = require('@line/bot-sdk');
 const OpenAI = require('openai');
 
 const app = express();
-app.use(express.json());
 
 // 設定
 const config = {
@@ -15,6 +14,26 @@ const config = {
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
+});
+
+// テスト用エンドポイント（Webhook動作確認）
+app.get('/test', (req, res) => {
+    res.json({
+        message: '猫神主Botは元気ですにゃ！',
+        timestamp: new Date().toISOString(),
+        webhook_url: req.get('host') + '/webhook',
+        environment_check: {
+            line_secret: !!process.env.LINE_CHANNEL_SECRET,
+            line_token: !!process.env.LINE_CHANNEL_ACCESS_TOKEN,
+            openai_key: !!process.env.OPENAI_API_KEY
+        }
+    });
+});
+
+// Webhook動作テスト用（POST）
+app.post('/test-webhook', express.json(), (req, res) => {
+    console.log('🧪 テストWebhook受信:', JSON.stringify(req.body, null, 2));
+    res.json({ message: 'テストWebhook受信成功にゃ', received: req.body });
 });
 
 // 制限設定
@@ -263,6 +282,29 @@ async function generateAIResponse(message, history) {
 
 // LINE クライアント設定
 const client = new line.Client(config);
+
+// =================================
+// Webhookエンドポイント（最優先設定）
+// =================================
+
+// Webhook処理（LINE middleware使用）
+app.post('/webhook', line.middleware(config), async (req, res) => {
+    try {
+        console.log('📨 Webhook受信成功');
+        res.status(200).end();
+        
+        const events = req.body.events;
+        console.log(`📨 イベント数: ${events.length}`);
+        
+        events.forEach(event => {
+            setImmediate(() => handleEvent(event));
+        });
+        
+    } catch (error) {
+        console.error('❌ Webhook処理エラー:', error.message);
+        res.status(200).end();
+    }
+});
 
 // =================================
 // 管理機能エンドポイント（統合版）
@@ -625,7 +667,7 @@ app.get('/admin/stats', (req, res) => {
 });
 
 // 手動クリーンアップ
-app.post('/admin/cleanup', (req, res) => {
+app.post('/admin/cleanup', express.json(), (req, res) => {
     const before = {
         sessions: userSessions.size,
         conversations: conversationHistory.size
@@ -666,15 +708,18 @@ app.post('/admin/cleanup', (req, res) => {
 // Webhook処理
 app.post('/webhook', line.middleware(config), async (req, res) => {
     try {
+        console.log('📨 Webhook受信:', req.body);
         res.status(200).end();
         
         const events = req.body.events;
+        console.log(`📨 イベント数: ${events.length}`);
+        
         events.forEach(event => {
             setImmediate(() => handleEvent(event));
         });
         
     } catch (error) {
-        console.error('Webhook処理エラー:', error);
+        console.error('❌ Webhook処理エラー:', error);
         res.status(200).end();
     }
 });
