@@ -1,4 +1,4 @@
-// 猫神主Bot - Webhook修正版
+// 猫神主Bot - 会話品質改善版
 require('dotenv').config();
 const express = require('express');
 const line = require('@line/bot-sdk');
@@ -16,26 +16,6 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// テスト用エンドポイント（Webhook動作確認）
-app.get('/test', (req, res) => {
-    res.json({
-        message: '猫神主Botは元気ですにゃ！',
-        timestamp: new Date().toISOString(),
-        webhook_url: req.get('host') + '/webhook',
-        environment_check: {
-            line_secret: !!process.env.LINE_CHANNEL_SECRET,
-            line_token: !!process.env.LINE_CHANNEL_ACCESS_TOKEN,
-            openai_key: !!process.env.OPENAI_API_KEY
-        }
-    });
-});
-
-// Webhook動作テスト用（POST）
-app.post('/test-webhook', express.json(), (req, res) => {
-    console.log('🧪 テストWebhook受信:', JSON.stringify(req.body, null, 2));
-    res.json({ message: 'テストWebhook受信成功にゃ', received: req.body });
-});
-
 // 制限設定
 const LIMITS = {
   MAX_USERS: 100,
@@ -44,39 +24,13 @@ const LIMITS = {
   CLEANUP_INTERVAL: 5 * 60 * 1000,
 };
 
-// 猫神主キャラクター設定
-const CHARACTER_PERSONALITY = `
-あなたは神社にいる心優しい神主の猫です。以下の特徴を持ちます：
-
-【キャラクター設定】
-- 神社で参拝者の悩みを聞く賢い神主猫
-- 長年多くの人の相談を聞いてきた経験豊富な存在
-- 神道の教えを基にした温かく実用的なアドバイスをする
-- 時々語尾に「にゃ」を付ける（頻度は控えめで自然に）
-- 落ち着いた口調で、親しみやすくも威厳のある話し方
-
-【話し方の特徴】
-- 200文字以内で簡潔に返答
-- 共感的で温かい口調
-- 神社や神道に関する言葉を時々織り交ぜる
-- 「〜にゃ」は文章の3回に1回程度、自然に使用
-- 相談者を「参拝者さん」と呼ぶこともある
-
-【相談対応方針】
-- まず相手の気持ちに寄り添い、共感を示す
-- 神道的な視点から心の整理を助ける
-- 具体的で実践的なアドバイスを提供
-- 最終的にお焚き上げで心の重荷を取り除く提案
-
-話し相手の悩みを真剣に聞き、心が軽くなるような温かいアドバイスを心がけてください。
-`;
-
 // データ管理
 const conversationHistory = new Map();
 const dailyUsage = new Map();
 const lastMessageTime = new Map();
 const userSessions = new Set();
 const purificationHistory = new Map();
+const userProfiles = new Map(); // userId -> { displayName, pictureUrl }
 
 // 統計データ
 const stats = {
@@ -87,29 +41,103 @@ const stats = {
     dailyMetrics: new Map(),
 };
 
-// 語尾処理関数
+// ユーザープロフィール取得
+async function getUserProfile(userId, client) {
+    try {
+        if (!userProfiles.has(userId)) {
+            const profile = await client.getProfile(userId);
+            userProfiles.set(userId, {
+                displayName: profile.displayName,
+                pictureUrl: profile.pictureUrl || null
+            });
+            console.log(`プロフィール取得: ${profile.displayName} (${userId.substring(0, 8)}...)`);
+        }
+        return userProfiles.get(userId);
+    } catch (error) {
+        console.error('プロフィール取得エラー:', error.message);
+        return null;
+    }
+}
+
+// 改善されたキャラクター設定
+function getCharacterPersonality(userName, remainingTurns) {
+    return `
+あなたは「つきみ」という名前の神社にいる心優しい猫です。
+
+【基本情報】
+- 名前: つきみ
+- 現在話している相手: ${userName || 'あなた'}
+- 相手の今日の残り相談回数: ${remainingTurns}回
+
+【基本姿勢】
+- まず相手の気持ちに共感することを最優先とする
+- アドバイスは求められない限り控えめにし、寄り添うことを重視
+- 神道の教えや宗教的な話は避ける
+- 相手を${userName ? `「${userName}さん」` : '「あなた」'}と自然に呼ぶ
+
+【重要な制約理解】
+- ユーザーは1日10回まで相談可能（現在残り${remainingTurns}回）
+- 制限について聞かれたら正確に「今日はあと${remainingTurns}回お話しできます」と答える
+- 「何回でも」「いくらでも」などの表現は使わない
+
+【話し方】
+- 共感的で温かい口調
+- 時々「にゃ」を付ける（自然に、頻度は控えめ）
+- 200文字以内で簡潔に
+- 相手の感情を受け止める言葉を優先
+
+【お焚き上げについて】
+- お焚き上げは心の重荷を神聖な炎で清める儀式
+- 説明を求められたら丁寧に説明
+- 実行は相手が明確に希望した場合のみ
+
+相手の気持ちに寄り添い、温かく受け止めることを最優先に対応してください。
+`;
+}
+
+// 語尾処理関数（改善版）
 function addCatSuffix(message) {
+    // 既に「にゃ」がある場合は追加しない
+    if (message.includes('にゃ')) {
+        return message;
+    }
+    
+    // 30%の確率で「にゃ」を追加
     if (Math.random() < 0.3) {
-        if (!message.endsWith('にゃ') && !message.endsWith('にゃ。')) {
-            if (message.endsWith('。') || message.endsWith('！') || message.endsWith('？')) {
-                return message.slice(0, -1) + 'にゃ' + message.slice(-1);
-            } else {
-                return message + 'にゃ';
-            }
+        if (message.endsWith('。') || message.endsWith('！') || message.endsWith('？')) {
+            return message.slice(0, -1) + 'にゃ' + message.slice(-1);
+        } else {
+            return message + 'にゃ';
         }
     }
     return message;
 }
 
-// システムメッセージ
+// システムメッセージ（改善版）
 const SYSTEM_MESSAGES = {
-    welcome: "いらっしゃいませ。私は神社で皆さんの心の相談を聞いている神主猫です。今日はどのようなことでお悩みでしょうか？お気軽にお話しくださいにゃ 🐾⛩️",
-    dailyLimitReached: "今日の相談回数の上限に達しました。心の整理には時間も大切ですので、また明日お参りくださいにゃ。きっと新しい気づきがあるはずです 🙏",
-    remainingTurns: (remaining) => `今日はあと${remaining}回までお話しできます。大切なお時間、心を込めてお聞きしますにゃ`,
-    maxUsersReached: "申し訳ございません。現在多くの参拝者さまがいらっしゃるため、新しい相談をお受けできません。少し時間をおいてからお参りください 🙏",
+    welcome: (userName) => `いらっしゃいませ${userName ? `、${userName}さん` : ''}。私は神社にいる「つきみ」という猫です。今日はどのようなことでお心を痛めていらっしゃいますか？お気軽にお話しくださいにゃ 🐾⛩️`,
+    
+    dailyLimitReached: (userName) => `${userName ? `${userName}さん、` : ''}今日の相談回数の上限に達しました。心の整理には時間も大切ですので、また明日お参りくださいにゃ。きっと新しい気づきがあるはずです 🙏`,
+    
+    remainingTurns: (remaining, userName) => `${userName ? `${userName}さん、` : ''}今日はあと${remaining}回までお話しできます。大切なお時間、心を込めてお聞きしますにゃ`,
+    
+    maxUsersReached: "申し訳ございません。現在多くの方がいらっしゃるため、新しい相談をお受けできません。少し時間をおいてからお参りください 🙏",
 };
 
-// お焚き上げ関連関数
+// お焚き上げ関連関数（改善版）
+function isQuestionAboutPurification(message) {
+    const questionPatterns = [
+        'って何', 'とは', 'について教えて', 'どんなもの', 'なんですか',
+        '？', '何ですか', 'わからない', '知らない', 'どういう意味',
+        'って何ですか', 'とは何ですか', 'どういうこと'
+    ];
+    
+    const hasPurificationWord = message.includes('お焚き上げ') || message.includes('たきあげ');
+    const hasQuestionPattern = questionPatterns.some(pattern => message.includes(pattern));
+    
+    return hasPurificationWord && hasQuestionPattern;
+}
+
 function shouldSuggestPurification(userId, message, history) {
     if (history.length < 3) return false;
     
@@ -130,37 +158,55 @@ function shouldSuggestPurification(userId, message, history) {
 }
 
 function shouldExecutePurification(message) {
-    const purificationKeywords = [
-        'お焚き上げ', 'たきあげ', 'お清め', 'リセット', '手放す',
-        '忘れたい', '清めて', 'お焚き上げして', 'お清めして',
-        'リセットして', '浄化して', '燃やして'
+    // 質問文の場合は実行しない
+    if (isQuestionAboutPurification(message)) {
+        return false;
+    }
+    
+    // 明確な実行意志を示すキーワードのみ
+    const executeKeywords = [
+        'お焚き上げして', 'お焚き上げをお願い', 'お焚き上げお願いします',
+        'リセットして', '手放したい', '忘れたい', 'お清めして',
+        '浄化して', '燃やして', 'リセットお願い'
     ];
     
-    return purificationKeywords.some(keyword => 
+    return executeKeywords.some(keyword => 
         message.toLowerCase().includes(keyword.toLowerCase())
     );
 }
 
-function getPurificationSuggestion() {
+function getPurificationSuggestion(userName) {
+    const name = userName ? `${userName}さんの` : 'あなたの';
     const suggestions = [
-        "今日お話しした心の重荷を、神聖な炎でお焚き上げしてお清めしましょうか？きっと心が軽やかになりますにゃ 🔥⛩️",
-        "お話をお聞きして、心に溜まったものをお焚き上げで清めるのはいかがでしょう？新しい気持ちで歩めるはずにゃ 🔥",
-        "今日の悩みや重い気持ちを、温かい炎で包んでお清めしませんか？心の浄化のお手伝いをさせていただきますにゃ 🔥✨"
+        `今日お話しした${name}心の重荷を、神聖な炎でお焚き上げしてお清めしましょうか？きっと心が軽やかになりますにゃ 🔥⛩️`,
+        `${name}心に溜まったものをお焚き上げで清めるのはいかがでしょう？新しい気持ちで歩めるはずにゃ 🔥`,
+        `今日の重い気持ちを、温かい炎で包んでお清めしませんか？${name}心の浄化のお手伝いをさせていただきますにゃ 🔥✨`
     ];
     
     return suggestions[Math.floor(Math.random() * suggestions.length)];
 }
 
+function getExplanationResponse() {
+    const explanations = [
+        "お焚き上げというのは、心に溜まった重い気持ちや悩みを、神聖な炎で清めて手放す儀式のことですにゃ。今日お話しした内容を整理して、心を軽やかにするお手伝いをするのです ✨",
+        "お焚き上げは、心の浄化の儀式にゃ。お話しした悩みや重い気持ちを温かい炎で包んで、新しい気持ちで歩めるようにするものですよ 🔥 希望されるときにお手伝いします"
+    ];
+    return explanations[Math.floor(Math.random() * explanations.length)];
+}
+
 async function executePurification(userId, replyToken, client) {
     try {
+        const profile = await getUserProfile(userId, client);
+        const userName = profile?.displayName;
+        
         purificationHistory.set(userId, Date.now());
         updateDailyMetrics(userId, 'purification');
         
-        console.log(`お焚き上げ開始: ユーザー${userId.substring(0, 8)}...`);
+        console.log(`お焚き上げ開始: ${userName || 'Unknown'} (${userId.substring(0, 8)}...)`);
         
         const stages = [
             {
-                message: "それでは、今日お話しした心の重荷をそっとお焚き上げさせていただきますにゃ 🔥⛩️",
+                message: `それでは、今日お話しした${userName ? `${userName}さんの` : ''}心の重荷をそっとお焚き上げさせていただきますにゃ 🔥⛩️`,
                 delay: 0
             },
             {
@@ -168,7 +214,7 @@ async function executePurification(userId, replyToken, client) {
                 delay: 3000
             },
             {
-                message: "🌟 お焚き上げが完了しました。あなたの心に新しい風が吹いて、清らかな気持ちになりましたにゃ ✨⛩️",
+                message: `🌟 お焚き上げが完了しました。${userName ? `${userName}さんの` : 'あなたの'}心に新しい風が吹いて、清らかな気持ちになりましたにゃ ✨⛩️`,
                 delay: 6000
             }
         ];
@@ -194,7 +240,7 @@ async function executePurification(userId, replyToken, client) {
         setTimeout(() => {
             conversationHistory.delete(userId);
             lastMessageTime.delete(userId);
-            console.log(`お焚き上げ完了: ユーザー${userId.substring(0, 8)}...の会話履歴を清浄化しました`);
+            console.log(`お焚き上げ完了: ${userName || 'Unknown'}の会話履歴を清浄化しました`);
         }, 8000);
         
         return true;
@@ -255,11 +301,53 @@ function updateDailyUsage(userId) {
     return usage.count;
 }
 
-// AI応答生成
-async function generateAIResponse(message, history) {
+function getRemainingTurns(userId) {
+    const today = new Date().toISOString().split('T')[0];
+    const usage = dailyUsage.get(userId) || { date: today, count: 0 };
+    return LIMITS.DAILY_TURN_LIMIT - usage.count;
+}
+
+// 制限関連質問の判定
+function isAskingAboutLimits(message) {
+    const limitQuestions = [
+        '何回', '何度', '制限', '回数', 'ターン', '上限',
+        'やりとり', '話せる', '相談できる', 'メッセージ'
+    ];
+    
+    const questionWords = ['？', '?', 'ですか', 'でしょうか', 'かな', 'どのくらい'];
+    
+    const hasLimitWord = limitQuestions.some(word => message.includes(word));
+    const hasQuestionWord = questionWords.some(word => message.includes(word));
+    
+    return hasLimitWord && hasQuestionWord;
+}
+
+function getLimitExplanation(remainingTurns, userName) {
+    const name = userName ? `${userName}さん` : 'あなた';
+    return `${name}は今日あと${remainingTurns}回まで私とお話しできますにゃ。1日の上限は10回までとなっていて、毎日リセットされるのです 🐾`;
+}
+
+// AI応答生成（改善版）
+async function generateAIResponse(message, history, userId, client) {
     try {
+        // ユーザープロフィール取得
+        const profile = await getUserProfile(userId, client);
+        const userName = profile?.displayName;
+        const remainingTurns = getRemainingTurns(userId);
+        
+        // 制限関連の質問チェック
+        if (isAskingAboutLimits(message)) {
+            return getLimitExplanation(remainingTurns, userName);
+        }
+        
+        // お焚き上げの質問チェック
+        if (isQuestionAboutPurification(message)) {
+            return getExplanationResponse();
+        }
+        
+        // 会話履歴をOpenAI形式に変換
         const messages = [
-            { role: 'system', content: CHARACTER_PERSONALITY },
+            { role: 'system', content: getCharacterPersonality(userName, remainingTurns) },
             ...history,
             { role: 'user', content: message }
         ];
@@ -302,9 +390,162 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
         
     } catch (error) {
         console.error('❌ Webhook処理エラー:', error.message);
-        res.status(200).end();
+        res.status(500).json({ error: 'Webhook処理エラー' });
     }
 });
+
+// メインイベント処理（改善版）
+async function handleEvent(event) {
+    if (event.type !== 'message' || event.message.type !== 'text') {
+        return;
+    }
+    
+    const userId = event.source.userId;
+    const userMessage = event.message.text;
+    const replyToken = event.replyToken;
+    
+    try {
+        // ユーザープロフィール取得（キャッシュ済みの場合は取得しない）
+        const profile = await getUserProfile(userId, client);
+        const userName = profile?.displayName;
+        
+        console.log(`メッセージ受信: ${userName || 'Unknown'} (${userId.substring(0, 8)}...) - "${userMessage}"`);
+        
+        // 新規ユーザーの制限チェック
+        if (!userSessions.has(userId) && userSessions.size >= LIMITS.MAX_USERS) {
+            await client.replyMessage(replyToken, {
+                type: 'text',
+                text: SYSTEM_MESSAGES.maxUsersReached
+            });
+            return;
+        }
+        
+        userSessions.add(userId);
+        lastMessageTime.set(userId, Date.now());
+        
+        // お焚き上げ実行チェック（改善版）
+        if (shouldExecutePurification(userMessage)) {
+            await executePurification(userId, replyToken, client);
+            return;
+        }
+        
+        // 日次制限チェック
+        if (!checkDailyLimit(userId)) {
+            await client.replyMessage(replyToken, {
+                type: 'text',
+                text: SYSTEM_MESSAGES.dailyLimitReached(userName)
+            });
+            return;
+        }
+        
+        // 会話履歴の管理
+        let history = conversationHistory.get(userId) || [];
+        
+        // 初回メッセージの場合（改善版）
+        if (history.length === 0) {
+            const welcomeMessage = SYSTEM_MESSAGES.welcome(userName);
+            
+            await client.replyMessage(replyToken, {
+                type: 'text',
+                text: welcomeMessage
+            });
+            
+            history.push({ role: 'assistant', content: welcomeMessage });
+            conversationHistory.set(userId, history);
+            updateDailyMetrics(userId, 'turn');
+            return;
+        }
+        
+        // AI応答生成（改善版）
+        const aiResponse = await generateAIResponse(userMessage, history, userId, client);
+        
+        // お焚き上げ提案の確認
+        let finalResponse = aiResponse;
+        if (shouldSuggestPurification(userId, userMessage, history)) {
+            finalResponse = aiResponse + "\n\n" + getPurificationSuggestion(userName);
+        }
+        
+        // 使用回数更新と残数通知
+        const usageCount = updateDailyUsage(userId);
+        const remaining = LIMITS.DAILY_TURN_LIMIT - usageCount;
+        
+        if (remaining <= 3 && remaining > 0) {
+            finalResponse += "\n\n" + SYSTEM_MESSAGES.remainingTurns(remaining, userName);
+        }
+        
+        // 会話履歴更新
+        history.push(
+            { role: 'user', content: userMessage },
+            { role: 'assistant', content: aiResponse }
+        );
+        
+        if (history.length > 20) {
+            history = history.slice(-20);
+        }
+        
+        conversationHistory.set(userId, history);
+        updateDailyMetrics(userId, 'turn');
+        
+        await client.replyMessage(replyToken, {
+            type: 'text',
+            text: finalResponse
+        });
+        
+        console.log(`応答送信完了: ${userName || 'Unknown'} (${userId.substring(0, 8)}...)`);
+        
+    } catch (error) {
+        console.error('メッセージ処理エラー:', error);
+        try {
+            await client.replyMessage(replyToken, {
+                type: 'text',
+                text: "申し訳ございません。お話を聞く準備ができませんでした。少し時間をおいてからもう一度お参りくださいにゃ 🙏"
+            });
+        } catch (replyError) {
+            console.error('エラー応答送信失敗:', replyError);
+        }
+    }
+}
+
+// 自動クリーンアップ関数
+function cleanupInactiveSessions() {
+    const now = Date.now();
+    let cleanedCount = 0;
+    
+    for (const [userId, timestamp] of lastMessageTime) {
+        if (now - timestamp > LIMITS.SESSION_TIMEOUT) {
+            conversationHistory.delete(userId);
+            lastMessageTime.delete(userId);
+            userSessions.delete(userId);
+            // プロフィールは保持（再取得コスト削減）
+            cleanedCount++;
+            
+            console.log(`セッション削除: ユーザー${userId.substring(0, 8)}... (30分非アクティブ)`);
+        }
+    }
+    
+    for (const [userId, timestamp] of purificationHistory) {
+        if (now - timestamp > 24 * 60 * 60 * 1000) {
+            purificationHistory.delete(userId);
+        }
+    }
+    
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const weekAgoStr = weekAgo.toISOString().split('T')[0];
+    
+    for (const [date] of stats.dailyMetrics) {
+        if (date < weekAgoStr) {
+            stats.dailyMetrics.delete(date);
+        }
+    }
+    
+    if (cleanedCount > 0) {
+        console.log(`自動クリーンアップ実行: ${cleanedCount}セッション削除`);
+    }
+}
+
+// 定期クリーンアップの実行
+setInterval(cleanupInactiveSessions, LIMITS.CLEANUP_INTERVAL);
 
 // =================================
 // 管理機能エンドポイント（統合版）
@@ -315,12 +556,12 @@ app.get('/', (req, res) => {
     res.send(`
         <html>
         <head>
-            <title>猫神主Bot</title>
+            <title>つきみ - 猫神主Bot</title>
             <meta charset="UTF-8">
         </head>
         <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px; background: linear-gradient(135deg, #ffeaa7, #fab1a0);">
-            <h1>🐱⛩️ 猫神主Bot ⛩️🐱</h1>
-            <p>神社の猫があなたの心の相談をお聞きします</p>
+            <h1>🐱⛩️ つきみ（猫神主Bot）⛩️🐱</h1>
+            <p>神社の猫「つきみ」があなたの心の相談をお聞きします</p>
             <p>サーバーは正常に稼働していますにゃ ✨</p>
             <div style="margin-top: 30px;">
                 <a href="/health" style="background: #55a3ff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin: 0 10px;">ヘルスチェック</a>
@@ -339,8 +580,8 @@ app.get('/health', (req, res) => {
     const health = {
         status: 'healthy',
         timestamp: new Date().toISOString(),
-        service: '猫神主Bot',
-        version: '1.0.0',
+        service: 'つきみ（猫神主Bot）',
+        version: '1.1.0',
         uptime: Math.floor(process.uptime()),
         environment: {
             node_version: process.version,
@@ -358,6 +599,7 @@ app.get('/health', (req, res) => {
             purificationCount: stats.purificationCount,
             todayPurifications: todayStats.purifications,
             activeSessions: userSessions.size,
+            cachedProfiles: userProfiles.size,
             purificationRate: stats.totalTurns > 0 ? (stats.purificationCount / stats.totalTurns * 100).toFixed(1) + '%' : '0%'
         },
         limits: {
@@ -366,7 +608,16 @@ app.get('/health', (req, res) => {
             sessionTimeout: LIMITS.SESSION_TIMEOUT / 60000 + '分',
             cleanupInterval: LIMITS.CLEANUP_INTERVAL / 60000 + '分'
         },
-        message: "神社の猫が元気に稼働中ですにゃ ✨"
+        improvements: {
+            version: '1.1.0',
+            features: [
+                'ユーザー名での呼び掛け対応',
+                'お焚き上げ誤発動防止',
+                '制限回数の正確な回答',
+                '共感重視のキャラクター調整'
+            ]
+        },
+        message: "つきみが元気に稼働中ですにゃ ✨"
     };
     
     res.json(health);
@@ -380,29 +631,11 @@ app.get('/admin', (req, res) => {
     res.send(`
         <html>
         <head>
-            <title>猫神主Bot 管理メニュー</title>
+            <title>つきみ 管理メニュー</title>
             <meta charset="UTF-8">
             <style>
                 body { 
                     font-family: 'Hiragino Sans', 'Yu Gothic', sans-serif; 
-                    margin: 20px; 
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    min-height: 100vh;
-                }
-                .container { 
-                    max-width: 600px; 
-                    margin: 0 auto; 
-                    background: white; 
-                    padding: 40px; 
-                    border-radius: 20px;
-                    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-                }
-                .header { text-align: center; margin-bottom: 40px; }
-                .status {
-                    background: #00b894;
-                    color: white;
-                    padding: 15px;
-                    border-radius: 10px;
                     margin: 20px 0;
                     text-align: center;
                     font-weight: bold;
@@ -425,12 +658,20 @@ app.get('/admin', (req, res) => {
                     transform: translateY(-3px);
                     box-shadow: 0 8px 25px rgba(0,0,0,0.2);
                 }
+                .version {
+                    background: #e17055;
+                    color: white;
+                    padding: 5px 10px;
+                    border-radius: 15px;
+                    font-size: 0.8em;
+                    margin-left: 10px;
+                }
             </style>
         </head>
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>🐱⛩️ 猫神主Bot 管理メニュー</h1>
+                    <h1>🐱⛩️ つきみ 管理メニュー <span class="version">v1.1.0</span></h1>
                     <div class="status">
                         ✅ サーバー稼働中 | 総参拝者: ${stats.totalUsers.size}名 | 本日: ${todayStats.users.size}名 | 総相談: ${stats.totalTurns}回
                     </div>
@@ -447,13 +688,20 @@ app.get('/admin', (req, res) => {
                 <a href="#" onclick="cleanup()" class="menu-item">
                     🧹 手動クリーンアップ
                 </a>
+                
+                <a href="/test" class="menu-item">
+                    🧪 システムテスト
+                </a>
             </div>
             
             <script>
                 async function cleanup() {
                     if (confirm('非アクティブセッションをクリーンアップしますか？')) {
                         try {
-                            const response = await fetch('/admin/cleanup', { method: 'POST' });
+                            const response = await fetch('/admin/cleanup', { 
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' }
+                            });
                             const result = await response.json();
                             alert('クリーンアップ完了にゃ\\n削除セッション数: ' + result.cleaned);
                             location.reload();
@@ -493,7 +741,7 @@ app.get('/admin/stats', (req, res) => {
         <!DOCTYPE html>
         <html>
         <head>
-            <title>猫神主Bot 統計情報</title>
+            <title>つきみ 統計情報</title>
             <meta charset="UTF-8">
             <style>
                 body { 
@@ -544,6 +792,13 @@ app.get('/admin/stats', (req, res) => {
                 .stat-label {
                     font-size: 1em;
                     opacity: 0.9;
+                }
+                .improvements {
+                    background: #00b894;
+                    color: white;
+                    padding: 20px;
+                    border-radius: 10px;
+                    margin-bottom: 20px;
                 }
                 .daily-stats {
                     background: white;
@@ -598,8 +853,19 @@ app.get('/admin/stats', (req, res) => {
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>🐱⛩️ 猫神主Bot 統計情報 ⛩️🐱</h1>
+                    <h1>🐱⛩️ つきみ統計情報 ⛩️🐱</h1>
                     <p>最終更新: ${new Date().toLocaleString('ja-JP')}</p>
+                </div>
+                
+                <div class="improvements">
+                    <h3>🆕 v1.1.0 改善内容</h3>
+                    <ul style="text-align: left; margin: 10px 0;">
+                        <li>✅ ユーザー名での呼び掛け対応</li>
+                        <li>✅ お焚き上げ誤発動防止</li>
+                        <li>✅ 制限回数の正確な回答</li>
+                        <li>✅ 共感重視のキャラクター調整</li>
+                        <li>✅ キャラクター名「つきみ」設定</li>
+                    </ul>
                 </div>
                 
                 <div class="stats-grid">
@@ -624,8 +890,8 @@ app.get('/admin/stats', (req, res) => {
                         <div class="stat-label">📊 お焚き上げ率</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-number">${(stats.totalTurns / Math.max(stats.totalUsers.size, 1)).toFixed(1)}</div>
-                        <div class="stat-label">📈 平均相談数/人</div>
+                        <div class="stat-number">${userProfiles.size}</div>
+                        <div class="stat-label">👤 取得済み名前</div>
                     </div>
                 </div>
                 
@@ -654,7 +920,7 @@ app.get('/admin/stats', (req, res) => {
                 </div>
                 
                 <div class="footer">
-                    <p>🐾 神主猫が皆さんの心を清めるお手伝いをしています 🐾</p>
+                    <p>🐾 つきみが皆さんの心に寄り添っています 🐾</p>
                     <p style="font-size: 0.9em; margin-top: 15px;">
                         システム稼働時間: ${Math.floor(process.uptime() / 3600)}時間${Math.floor((process.uptime() % 3600) / 60)}分
                     </p>
@@ -701,179 +967,31 @@ app.post('/admin/cleanup', express.json(), (req, res) => {
     });
 });
 
-// =================================
-// LINE Webhook処理
-// =================================
-
-// Webhook処理
-app.post('/webhook', line.middleware(config), async (req, res) => {
-    try {
-        console.log('📨 Webhook受信:', req.body);
-        res.status(200).end();
-        
-        const events = req.body.events;
-        console.log(`📨 イベント数: ${events.length}`);
-        
-        events.forEach(event => {
-            setImmediate(() => handleEvent(event));
-        });
-        
-    } catch (error) {
-        console.error('❌ Webhook処理エラー:', error);
-        res.status(200).end();
-    }
+// テストエンドポイント
+app.get('/test', (req, res) => {
+    res.json({
+        message: 'つきみは元気ですにゃ！',
+        timestamp: new Date().toISOString(),
+        version: '1.1.0',
+        webhook_url: req.get('host') + '/webhook',
+        environment_check: {
+            line_secret: !!process.env.LINE_CHANNEL_SECRET,
+            line_token: !!process.env.LINE_CHANNEL_ACCESS_TOKEN,
+            openai_key: !!process.env.OPENAI_API_KEY
+        },
+        improvements: [
+            'ユーザー名での呼び掛け',
+            'お焚き上げ誤発動防止',
+            '制限回数の正確回答',
+            '共感重視キャラクター'
+        ]
+    });
 });
-
-// メインイベント処理
-async function handleEvent(event) {
-    if (event.type !== 'message' || event.message.type !== 'text') {
-        return;
-    }
-    
-    const userId = event.source.userId;
-    const userMessage = event.message.text;
-    const replyToken = event.replyToken;
-    
-    try {
-        console.log(`メッセージ受信: ユーザー${userId.substring(0, 8)}... - "${userMessage}"`);
-        
-        // 新規ユーザーの制限チェック
-        if (!userSessions.has(userId) && userSessions.size >= LIMITS.MAX_USERS) {
-            await client.replyMessage(replyToken, {
-                type: 'text',
-                text: SYSTEM_MESSAGES.maxUsersReached
-            });
-            return;
-        }
-        
-        userSessions.add(userId);
-        lastMessageTime.set(userId, Date.now());
-        
-        // お焚き上げ実行チェック
-        if (shouldExecutePurification(userMessage)) {
-            await executePurification(userId, replyToken, client);
-            return;
-        }
-        
-        // 日次制限チェック
-        if (!checkDailyLimit(userId)) {
-            await client.replyMessage(replyToken, {
-                type: 'text',
-                text: SYSTEM_MESSAGES.dailyLimitReached
-            });
-            return;
-        }
-        
-        // 会話履歴の管理
-        let history = conversationHistory.get(userId) || [];
-        
-        // 初回メッセージの場合
-        if (history.length === 0) {
-            await client.replyMessage(replyToken, {
-                type: 'text',
-                text: SYSTEM_MESSAGES.welcome
-            });
-            
-            history.push({ role: 'assistant', content: SYSTEM_MESSAGES.welcome });
-            conversationHistory.set(userId, history);
-            updateDailyMetrics(userId, 'turn');
-            return;
-        }
-        
-        // AI応答生成
-        const aiResponse = await generateAIResponse(userMessage, history);
-        
-        // お焚き上げ提案の確認
-        let finalResponse = aiResponse;
-        if (shouldSuggestPurification(userId, userMessage, history)) {
-            finalResponse = aiResponse + "\n\n" + getPurificationSuggestion();
-        }
-        
-        // 使用回数更新と残数通知
-        const usageCount = updateDailyUsage(userId);
-        const remaining = LIMITS.DAILY_TURN_LIMIT - usageCount;
-        
-        if (remaining <= 3 && remaining > 0) {
-            finalResponse += "\n\n" + SYSTEM_MESSAGES.remainingTurns(remaining);
-        }
-        
-        // 会話履歴更新
-        history.push(
-            { role: 'user', content: userMessage },
-            { role: 'assistant', content: aiResponse }
-        );
-        
-        if (history.length > 20) {
-            history = history.slice(-20);
-        }
-        
-        conversationHistory.set(userId, history);
-        updateDailyMetrics(userId, 'turn');
-        
-        await client.replyMessage(replyToken, {
-            type: 'text',
-            text: finalResponse
-        });
-        
-        console.log(`応答送信完了: ユーザー${userId.substring(0, 8)}...`);
-        
-    } catch (error) {
-        console.error('メッセージ処理エラー:', error);
-        try {
-            await client.replyMessage(replyToken, {
-                type: 'text',
-                text: "申し訳ございません。お話を聞く準備ができませんでした。少し時間をおいてからもう一度お参りくださいにゃ 🙏"
-            });
-        } catch (replyError) {
-            console.error('エラー応答送信失敗:', replyError);
-        }
-    }
-}
-
-// 自動クリーンアップ関数
-function cleanupInactiveSessions() {
-    const now = Date.now();
-    let cleanedCount = 0;
-    
-    for (const [userId, timestamp] of lastMessageTime) {
-        if (now - timestamp > LIMITS.SESSION_TIMEOUT) {
-            conversationHistory.delete(userId);
-            lastMessageTime.delete(userId);
-            userSessions.delete(userId);
-            cleanedCount++;
-            
-            console.log(`セッション削除: ユーザー${userId.substring(0, 8)}... (30分非アクティブ)`);
-        }
-    }
-    
-    for (const [userId, timestamp] of purificationHistory) {
-        if (now - timestamp > 24 * 60 * 60 * 1000) {
-            purificationHistory.delete(userId);
-        }
-    }
-    
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    const weekAgoStr = weekAgo.toISOString().split('T')[0];
-    
-    for (const [date] of stats.dailyMetrics) {
-        if (date < weekAgoStr) {
-            stats.dailyMetrics.delete(date);
-        }
-    }
-    
-    if (cleanedCount > 0) {
-        console.log(`自動クリーンアップ実行: ${cleanedCount}セッション削除`);
-    }
-}
-
-// 定期クリーンアップの実行
-setInterval(cleanupInactiveSessions, LIMITS.CLEANUP_INTERVAL);
 
 // サーバー開始
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log('🐱⛩️ 猫神主Botが起動しました ⛩️🐱');
+    console.log('🐱⛩️ つきみ（猫神主Bot）が起動しました ⛩️🐱');
     console.log(`ポート: ${PORT}`);
     console.log(`環境: ${process.env.NODE_ENV || 'development'}`);
     console.log('');
@@ -883,13 +1001,22 @@ app.listen(PORT, () => {
     console.log(`セッション時間: ${LIMITS.SESSION_TIMEOUT / 60000}分`);
     console.log(`クリーンアップ間隔: ${LIMITS.CLEANUP_INTERVAL / 60000}分`);
     console.log('');
+    console.log('=== 🆕 v1.1.0 改善内容 ===');
+    console.log('• ユーザー名での呼び掛け対応');
+    console.log('• お焚き上げ誤発動防止');
+    console.log('• 制限回数の正確な回答');
+    console.log('• 共感重視のキャラクター調整');
+    console.log('• キャラクター名「つきみ」設定');
+    console.log('===========================');
+    console.log('');
     console.log('=== 🎯 PMF検証項目 ===');
     console.log('• お焚き上げ利用率: 目標30%以上');
     console.log('• 平均相談ターン数: 目標+2-3ターン');
     console.log('• ユーザー継続率: 翌日再利用率');
+    console.log('• 会話品質: 誤動作・混乱の削減');
     console.log('========================');
     console.log('');
-    console.log('神社でお待ちしていますにゃ... 🐾');
+    console.log('つきみが神社でお待ちしていますにゃ... 🐾');
     
     // 起動時の環境変数チェック
     const requiredEnvs = ['LINE_CHANNEL_SECRET', 'LINE_CHANNEL_ACCESS_TOKEN', 'OPENAI_API_KEY'];
@@ -900,5 +1027,24 @@ app.listen(PORT, () => {
         console.error('Renderの環境変数設定を確認してください');
     } else {
         console.log('✅ 環境変数設定完了');
+        console.log('✅ 会話品質改善版(v1.1.0)準備完了');
     }
-});
+});: 20px; 
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    min-height: 100vh;
+                }
+                .container { 
+                    max-width: 600px; 
+                    margin: 0 auto; 
+                    background: white; 
+                    padding: 40px; 
+                    border-radius: 20px;
+                    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+                }
+                .header { text-align: center; margin-bottom: 40px; }
+                .status {
+                    background: #00b894;
+                    color: white;
+                    padding: 15px;
+                    border-radius: 10px;
+                    margin
