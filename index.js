@@ -1,4 +1,4 @@
-// 猫神主Bot - 会話品質改善版
+// 猫神主Bot - 会話品質改善版（構文修正版）
 require('dotenv').config();
 const express = require('express');
 const line = require('@line/bot-sdk');
@@ -61,24 +61,25 @@ async function getUserProfile(userId, client) {
 
 // 改善されたキャラクター設定
 function getCharacterPersonality(userName, remainingTurns) {
+    const nameDisplay = userName ? `${userName}さん` : 'あなた';
     return `
 あなたは「つきみ」という名前の神社にいる心優しい猫です。
 
 【基本情報】
 - 名前: つきみ
-- 現在話している相手: ${userName || 'あなた'}
+- 現在話している相手: ${nameDisplay}
 - 相手の今日の残り相談回数: ${remainingTurns}回
 
 【基本姿勢】
 - まず相手の気持ちに共感することを最優先とする
 - アドバイスは求められない限り控えめにし、寄り添うことを重視
 - 神道の教えや宗教的な話は避ける
-- 相手を${userName ? `「${userName}さん」` : '「あなた」'}と自然に呼ぶ
+- 相手を${nameDisplay}と自然に呼ぶ
 
 【重要な制約理解】
 - ユーザーは1日10回まで相談可能（現在残り${remainingTurns}回）
 - 制限について聞かれたら正確に「今日はあと${remainingTurns}回お話しできます」と答える
-- 「何回でも」「いくらでも」などの表現は使わない
+- 「何回でも」「いくらでも」などの表現は絶対に使わない
 
 【話し方】
 - 共感的で温かい口調
@@ -194,6 +195,26 @@ function getExplanationResponse() {
     return explanations[Math.floor(Math.random() * explanations.length)];
 }
 
+// 制限関連質問の判定
+function isAskingAboutLimits(message) {
+    const limitQuestions = [
+        '何回', '何度', '制限', '回数', 'ターン', '上限',
+        'やりとり', '話せる', '相談できる', 'メッセージ'
+    ];
+    
+    const questionWords = ['？', '?', 'ですか', 'でしょうか', 'かな', 'どのくらい'];
+    
+    const hasLimitWord = limitQuestions.some(word => message.includes(word));
+    const hasQuestionWord = questionWords.some(word => message.includes(word));
+    
+    return hasLimitWord && hasQuestionWord;
+}
+
+function getLimitExplanation(remainingTurns, userName) {
+    const name = userName ? `${userName}さん` : 'あなた';
+    return `${name}は今日あと${remainingTurns}回まで私とお話しできますにゃ。1日の上限は10回までとなっていて、毎日リセットされるのです 🐾`;
+}
+
 async function executePurification(userId, replyToken, client) {
     try {
         const profile = await getUserProfile(userId, client);
@@ -307,26 +328,6 @@ function getRemainingTurns(userId) {
     return LIMITS.DAILY_TURN_LIMIT - usage.count;
 }
 
-// 制限関連質問の判定
-function isAskingAboutLimits(message) {
-    const limitQuestions = [
-        '何回', '何度', '制限', '回数', 'ターン', '上限',
-        'やりとり', '話せる', '相談できる', 'メッセージ'
-    ];
-    
-    const questionWords = ['？', '?', 'ですか', 'でしょうか', 'かな', 'どのくらい'];
-    
-    const hasLimitWord = limitQuestions.some(word => message.includes(word));
-    const hasQuestionWord = questionWords.some(word => message.includes(word));
-    
-    return hasLimitWord && hasQuestionWord;
-}
-
-function getLimitExplanation(remainingTurns, userName) {
-    const name = userName ? `${userName}さん` : 'あなた';
-    return `${name}は今日あと${remainingTurns}回まで私とお話しできますにゃ。1日の上限は10回までとなっていて、毎日リセットされるのです 🐾`;
-}
-
 // AI応答生成（改善版）
 async function generateAIResponse(message, history, userId, client) {
     try {
@@ -372,10 +373,10 @@ async function generateAIResponse(message, history, userId, client) {
 const client = new line.Client(config);
 
 // =================================
-// Webhookエンドポイント（最優先設定）
+// Webhookエンドポイント
 // =================================
 
-// Webhook処理（LINE middleware使用）
+// Webhook処理
 app.post('/webhook', line.middleware(config), async (req, res) => {
     try {
         console.log('📨 Webhook受信成功');
@@ -390,7 +391,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
         
     } catch (error) {
         console.error('❌ Webhook処理エラー:', error.message);
-        res.status(500).json({ error: 'Webhook処理エラー' });
+        res.status(200).end();
     }
 });
 
@@ -405,7 +406,7 @@ async function handleEvent(event) {
     const replyToken = event.replyToken;
     
     try {
-        // ユーザープロフィール取得（キャッシュ済みの場合は取得しない）
+        // ユーザープロフィール取得
         const profile = await getUserProfile(userId, client);
         const userName = profile?.displayName;
         
@@ -516,7 +517,6 @@ function cleanupInactiveSessions() {
             conversationHistory.delete(userId);
             lastMessageTime.delete(userId);
             userSessions.delete(userId);
-            // プロフィールは保持（再取得コスト削減）
             cleanedCount++;
             
             console.log(`セッション削除: ユーザー${userId.substring(0, 8)}... (30分非アクティブ)`);
@@ -548,7 +548,7 @@ function cleanupInactiveSessions() {
 setInterval(cleanupInactiveSessions, LIMITS.CLEANUP_INTERVAL);
 
 // =================================
-// 管理機能エンドポイント（統合版）
+// 管理機能エンドポイント
 // =================================
 
 // トップページ
@@ -583,14 +583,6 @@ app.get('/health', (req, res) => {
         service: 'つきみ（猫神主Bot）',
         version: '1.1.0',
         uptime: Math.floor(process.uptime()),
-        environment: {
-            node_version: process.version,
-            platform: process.platform,
-            memory_usage: {
-                rss: Math.round(process.memoryUsage().rss / 1024 / 1024) + 'MB',
-                heapUsed: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB'
-            }
-        },
         stats: {
             totalUsers: stats.totalUsers.size,
             todayUsers: todayStats.users.size,
@@ -604,18 +596,7 @@ app.get('/health', (req, res) => {
         },
         limits: {
             maxUsers: LIMITS.MAX_USERS,
-            dailyTurnLimit: LIMITS.DAILY_TURN_LIMIT,
-            sessionTimeout: LIMITS.SESSION_TIMEOUT / 60000 + '分',
-            cleanupInterval: LIMITS.CLEANUP_INTERVAL / 60000 + '分'
-        },
-        improvements: {
-            version: '1.1.0',
-            features: [
-                'ユーザー名での呼び掛け対応',
-                'お焚き上げ誤発動防止',
-                '制限回数の正確な回答',
-                '共感重視のキャラクター調整'
-            ]
+            dailyTurnLimit: LIMITS.DAILY_TURN_LIMIT
         },
         message: "つきみが元気に稼働中ですにゃ ✨"
     };
@@ -636,6 +617,24 @@ app.get('/admin', (req, res) => {
             <style>
                 body { 
                     font-family: 'Hiragino Sans', 'Yu Gothic', sans-serif; 
+                    margin: 20px; 
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    min-height: 100vh;
+                }
+                .container { 
+                    max-width: 600px; 
+                    margin: 0 auto; 
+                    background: white; 
+                    padding: 40px; 
+                    border-radius: 20px;
+                    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+                }
+                .header { text-align: center; margin-bottom: 40px; }
+                .status {
+                    background: #00b894;
+                    color: white;
+                    padding: 15px;
+                    border-radius: 10px;
                     margin: 20px 0;
                     text-align: center;
                     font-weight: bold;
@@ -658,59 +657,25 @@ app.get('/admin', (req, res) => {
                     transform: translateY(-3px);
                     box-shadow: 0 8px 25px rgba(0,0,0,0.2);
                 }
-                .version {
-                    background: #e17055;
-                    color: white;
-                    padding: 5px 10px;
-                    border-radius: 15px;
-                    font-size: 0.8em;
-                    margin-left: 10px;
-                }
             </style>
         </head>
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>🐱⛩️ つきみ 管理メニュー <span class="version">v1.1.0</span></h1>
+                    <h1>🐱⛩️ つきみ 管理メニュー</h1>
                     <div class="status">
-                        ✅ サーバー稼働中 | 総参拝者: ${stats.totalUsers.size}名 | 本日: ${todayStats.users.size}名 | 総相談: ${stats.totalTurns}回
+                        ✅ v1.1.0稼働中 | 参拝者: ${stats.totalUsers.size}名 | 本日: ${todayStats.users.size}名 | 相談: ${stats.totalTurns}回
                     </div>
                 </div>
                 
                 <a href="/health" class="menu-item">
-                    ❤️ ヘルスチェック (JSON形式)
+                    ❤️ ヘルスチェック
                 </a>
                 
                 <a href="/admin/stats" class="menu-item">
                     📊 統計ダッシュボード
                 </a>
-                
-                <a href="#" onclick="cleanup()" class="menu-item">
-                    🧹 手動クリーンアップ
-                </a>
-                
-                <a href="/test" class="menu-item">
-                    🧪 システムテスト
-                </a>
             </div>
-            
-            <script>
-                async function cleanup() {
-                    if (confirm('非アクティブセッションをクリーンアップしますか？')) {
-                        try {
-                            const response = await fetch('/admin/cleanup', { 
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' }
-                            });
-                            const result = await response.json();
-                            alert('クリーンアップ完了にゃ\\n削除セッション数: ' + result.cleaned);
-                            location.reload();
-                        } catch (error) {
-                            alert('エラーが発生しました: ' + error.message);
-                        }
-                    }
-                }
-            </script>
         </body>
         </html>
     `);
@@ -1029,22 +994,4 @@ app.listen(PORT, () => {
         console.log('✅ 環境変数設定完了');
         console.log('✅ 会話品質改善版(v1.1.0)準備完了');
     }
-});: 20px; 
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    min-height: 100vh;
-                }
-                .container { 
-                    max-width: 600px; 
-                    margin: 0 auto; 
-                    background: white; 
-                    padding: 40px; 
-                    border-radius: 20px;
-                    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-                }
-                .header { text-align: center; margin-bottom: 40px; }
-                .status {
-                    background: #00b894;
-                    color: white;
-                    padding: 15px;
-                    border-radius: 10px;
-                    margin
+});
