@@ -175,24 +175,101 @@ function shouldSuggestPurification(userId, message, history) {
 }
 
 function shouldExecutePurification(message) {
-    // 質問文の場合は実行しない
+    // 🚨 NEW: 質問文の厳格判定 - 誤発動防止
+    const questionIndicators = [
+        'でしょうか？', 'でしょうか', 'ますか？', 'ますか',
+        'どうやって', 'どのように', 'どうしたら', 'どうすれば',
+        'どんな方法', 'どんなやり方', 'どういう風に',
+        '教えて', 'アドバイス', '相談', '悩み', '困って',
+        '？', '?', 'どうしよう', 'わからない'
+    ];
+    
+    // 質問文の場合は絶対にお焚き上げしない
+    const isQuestion = questionIndicators.some(indicator => 
+        message.includes(indicator)
+    );
+    
+    if (isQuestion) {
+        console.log('🚫 質問文検出 - お焚き上げ実行回避');
+        return false;
+    }
+    
+    // 既存の質問判定も保持
     if (isQuestionAboutPurification(message)) {
         return false;
     }
     
-    // 🆕 Task 4: お焚き上げ同意応答キーワード追加
+    // 🚨 UPDATED: より厳格な実行キーワード判定
     const executeKeywords = [
-        'お焚き上げして', 'お焚き上げをお願い', 'お焚き上げお願いします',
-        'リセットして', '手放したい', '忘れたい', 'お清めして',
-        '浄化して', '燃やして', 'リセットお願い',
-        // 🆕 同意応答キーワード追加
-        'はい', 'お願いします', 'お願い', 'やって', 'してください', 'して',
-        'yes', 'おねがい', 'ぜひ', 'よろしく'
+        'お焚き上げして', 'お焚き上げを', 'お焚き上げお願い',
+        'リセットして', 'リセットを', 'リセットお願い',
+        '手放したい', '忘れたい', '消したい',
+        'お清めして', '浄化して', '燃やして'
     ];
     
     return executeKeywords.some(keyword => 
         message.toLowerCase().includes(keyword.toLowerCase())
     );
+}
+
+// 🆕 NEW: 提案後の同意確認用の新しい関数
+function isPurificationAgreement(message, userId) {
+    // 直前にお焚き上げ提案をしたかチェック
+    const history = conversationHistory.get(userId) || [];
+    if (history.length < 1) return false;
+    
+    const lastResponse = history[history.length - 1];
+    const hasSuggestion = lastResponse.content && (
+        lastResponse.content.includes('お焚き上げ') ||
+        lastResponse.content.includes('お清め')
+    );
+    
+    if (!hasSuggestion) return false;
+    
+    // 提案後の同意キーワード
+    const agreementKeywords = [
+        'はい', 'お願いします', 'お願い', 'やって',
+        'してください', 'して', 'yes', 'おねがい',
+        'ぜひ', 'よろしく', 'ok', 'オッケー'
+    ];
+    
+    return agreementKeywords.some(keyword => 
+        message.toLowerCase().includes(keyword.toLowerCase())
+    );
+}
+
+// 🆕 NEW: アンケート提案判定
+function shouldSuggestAnkete(userId, history, userMessage) {
+    if (history.length < 3) return false;
+    
+    // お焚き上げのクールタイム中はアンケート提案
+    const lastPurification = purificationHistory.get(userId);
+    if (lastPurification) {
+        const hoursSince = (Date.now() - lastPurification) / (1000 * 60 * 60);
+        if (hoursSince < 1) return true; // 1時間以内
+    }
+    
+    const endingKeywords = [
+        'ありがとう', 'ありがとございます', 'スッキリ', 'すっきり',
+        '楽になった', '軽くなった', '話せてよかった', '聞いてくれて',
+        'おかげで', '助かった', '気が楽に', '安心した',
+        '落ち着いた', '整理できた'
+    ];
+    
+    return endingKeywords.some(keyword => 
+        userMessage.includes(keyword)
+    );
+}
+
+// 🆕 NEW: アンケート提案メッセージ
+function getAnketeSuggestion(userName, useNameInResponse) {
+    const name = (userName && useNameInResponse) ? `${userName}さん` : 'あなた';
+    return `最後に、つきみの相談サービスをより良くするため、簡単なアンケートにご協力いただけませんか？
+${name}の貴重なご意見をお聞かせくださいにゃ✨
+
+📋 アンケートはこちら: https://forms.gle/B6pJdXMUMRnVxBnt6
+
+※任意ですので、お時間のある時にお答えくださいにゃ🐾`;
 }
 
 function getPurificationSuggestion(userName, useNameInResponse) {
@@ -450,11 +527,18 @@ async function handleEvent(event) {
         userSessions.add(userId);
         lastMessageTime.set(userId, Date.now());
         
-        // お焚き上げ実行チェック（改善版）
-        if (shouldExecutePurification(userMessage)) {
-            await executePurification(userId, replyToken, client);
-            return;
-        }
+       // 🚨 UPDATED: 2段階判定システム
+          // Step 1: 明確な実行意志の判定
+          if (shouldExecutePurification(userMessage)) {
+              await executePurification(userId, replyToken, client);
+              return;
+          }
+          
+          // Step 2: 提案後の同意確認
+          if (isPurificationAgreement(userMessage, userId)) {
+              await executePurification(userId, replyToken, client);
+              return;
+          }
         
         // 日次制限チェック
         if (!checkDailyLimit(userId)) {
@@ -491,12 +575,14 @@ async function handleEvent(event) {
         // AI応答生成（改善版）
         const aiResponse = await generateAIResponse(userMessage, history, userId, client);
         
-        // お焚き上げ提案の確認
-        let finalResponse = aiResponse;
-        if (shouldSuggestPurification(userId, userMessage, history)) {
-            finalResponse = aiResponse + "\n\n" + getPurificationSuggestion(userName, useNameInResponse);
-        }
-        
+       // 🆕 NEW: お焚き上げ提案 + アンケート提案
+          let finalResponse = aiResponse;
+          if (shouldSuggestPurification(userId, userMessage, history)) {
+              finalResponse = aiResponse + "\n\n" + getPurificationSuggestion(userName, useNameInResponse);
+          } else if (shouldSuggestAnkete(userId, history, userMessage)) {
+              // 終了サインだがお焚き上げ提案しない場合はアンケート提案
+              finalResponse = aiResponse + "\n\n" + getAnketeSuggestion(userName, useNameInResponse);
+          }        
         // 使用回数更新と残数通知
         const usageCount = updateDailyUsage(userId);
         const remaining = LIMITS.DAILY_TURN_LIMIT - usageCount;
