@@ -1,4 +1,4 @@
-// 猫神主Bot - 会話品質改善版（構文修正版）
+// 猫神主Bot「つきみ」- v1.2.0 Priority 1修正版
 require('dotenv').config();
 const express = require('express');
 const line = require('@line/bot-sdk');
@@ -59,9 +59,14 @@ async function getUserProfile(userId, client) {
     }
 }
 
+// 🆕 名前を呼ぶかどうかの判定（4回に1回）
+function shouldUseName(conversationCount) {
+    return conversationCount % 4 === 1;
+}
+
 // 改善されたキャラクター設定
-function getCharacterPersonality(userName, remainingTurns) {
-    const nameDisplay = userName ? `${userName}さん` : 'あなた';
+function getCharacterPersonality(userName, remainingTurns, useNameInResponse) {
+    const nameDisplay = (userName && useNameInResponse) ? `${userName}さん` : 'あなた';
     return `
 あなたは「つきみ」という名前の神社にいる心優しい猫です。
 
@@ -116,11 +121,22 @@ function addCatSuffix(message) {
 
 // システムメッセージ（改善版）
 const SYSTEM_MESSAGES = {
-    welcome: (userName) => `いらっしゃいませ${userName ? `、${userName}さん` : ''}。私は神社にいる「つきみ」という猫です。今日はどのようなことでお心を痛めていらっしゃいますか？お気軽にお話しくださいにゃ 🐾⛩️`,
+    // 🆕 Task 3: 初回自己紹介を簡略化
+    welcome: (userName, useNameInResponse) => {
+        const namePrefix = (userName && useNameInResponse) ? `${userName}さん、` : '';
+        return `${namePrefix}今日はどのようなことでお悩みでしょうか？お気軽にお話しくださいにゃ 🐾`;
+    },
     
-    dailyLimitReached: (userName) => `${userName ? `${userName}さん、` : ''}今日の相談回数の上限に達しました。心の整理には時間も大切ですので、また明日お参りくださいにゃ。きっと新しい気づきがあるはずです 🙏`,
+    dailyLimitReached: (userName, useNameInResponse) => {
+        const namePrefix = (userName && useNameInResponse) ? `${userName}さん、` : '';
+        return `${namePrefix}今日の相談回数の上限に達しました。心の整理には時間も大切ですので、また明日お参りくださいにゃ。きっと新しい気づきがあるはずです 🙏`;
+    },
     
-    remainingTurns: (remaining, userName) => `${userName ? `${userName}さん、` : ''}今日はあと${remaining}回までお話しできます。大切なお時間、心を込めてお聞きしますにゃ`,
+    // 🆕 Task 1: 残数通知を3回から開始（3回以下 → 3回から）
+    remainingTurns: (remaining, userName, useNameInResponse) => {
+        const namePrefix = (userName && useNameInResponse) ? `${userName}さん、` : '';
+        return `${namePrefix}今日はあと${remaining}回までお話しできます。大切なお時間、心を込めてお聞きしますにゃ`;
+    },
     
     maxUsersReached: "申し訳ございません。現在多くの方がいらっしゃるため、新しい相談をお受けできません。少し時間をおいてからお参りください 🙏",
 };
@@ -164,11 +180,14 @@ function shouldExecutePurification(message) {
         return false;
     }
     
-    // 明確な実行意志を示すキーワードのみ
+    // 🆕 Task 4: お焚き上げ同意応答キーワード追加
     const executeKeywords = [
         'お焚き上げして', 'お焚き上げをお願い', 'お焚き上げお願いします',
         'リセットして', '手放したい', '忘れたい', 'お清めして',
-        '浄化して', '燃やして', 'リセットお願い'
+        '浄化して', '燃やして', 'リセットお願い',
+        // 🆕 同意応答キーワード追加
+        'はい', 'お願いします', 'お願い', 'やって', 'してください', 'して',
+        'yes', 'おねがい', 'ぜひ', 'よろしく'
     ];
     
     return executeKeywords.some(keyword => 
@@ -176,8 +195,8 @@ function shouldExecutePurification(message) {
     );
 }
 
-function getPurificationSuggestion(userName) {
-    const name = userName ? `${userName}さんの` : 'あなたの';
+function getPurificationSuggestion(userName, useNameInResponse) {
+    const name = (userName && useNameInResponse) ? `${userName}さんの` : 'あなたの';
     const suggestions = [
         `今日お話しした${name}心の重荷を、神聖な炎でお焚き上げしてお清めしましょうか？きっと心が軽やかになりますにゃ 🔥⛩️`,
         `${name}心に溜まったものをお焚き上げで清めるのはいかがでしょう？新しい気持ちで歩めるはずにゃ 🔥`,
@@ -210,8 +229,8 @@ function isAskingAboutLimits(message) {
     return hasLimitWord && hasQuestionWord;
 }
 
-function getLimitExplanation(remainingTurns, userName) {
-    const name = userName ? `${userName}さん` : 'あなた';
+function getLimitExplanation(remainingTurns, userName, useNameInResponse) {
+    const name = (userName && useNameInResponse) ? `${userName}さん` : 'あなた';
     return `${name}は今日あと${remainingTurns}回まで私とお話しできますにゃ。1日の上限は10回までとなっていて、毎日リセットされるのです 🐾`;
 }
 
@@ -219,6 +238,8 @@ async function executePurification(userId, replyToken, client) {
     try {
         const profile = await getUserProfile(userId, client);
         const userName = profile?.displayName;
+        const conversationCount = conversationHistory.get(userId)?.length || 0;
+        const useNameInResponse = shouldUseName(conversationCount);
         
         purificationHistory.set(userId, Date.now());
         updateDailyMetrics(userId, 'purification');
@@ -227,7 +248,7 @@ async function executePurification(userId, replyToken, client) {
         
         const stages = [
             {
-                message: `それでは、今日お話しした${userName ? `${userName}さんの` : ''}心の重荷をそっとお焚き上げさせていただきますにゃ 🔥⛩️`,
+                message: `それでは、今日お話しした${(userName && useNameInResponse) ? `${userName}さんの` : ''}心の重荷をそっとお焚き上げさせていただきますにゃ 🔥⛩️`,
                 delay: 0
             },
             {
@@ -235,7 +256,10 @@ async function executePurification(userId, replyToken, client) {
                 delay: 3000
             },
             {
-                message: `🌟 お焚き上げが完了しました。${userName ? `${userName}さんの` : 'あなたの'}心に新しい風が吹いて、清らかな気持ちになりましたにゃ ✨⛩️`,
+                // 🆕 Task 5: お焚き上げ完了後メッセージ強化
+                message: `🌟 お焚き上げが完了しました。${(userName && useNameInResponse) ? `${userName}さんの` : 'あなたの'}心に新しい風が吹いて、清らかな気持ちになりましたにゃ ✨⛩️
+
+また心に重いものが溜まった時は、いつでも神社にお参りください。つきみがいつでもお待ちしていますにゃ 🐾`,
                 delay: 6000
             }
         ];
@@ -335,10 +359,12 @@ async function generateAIResponse(message, history, userId, client) {
         const profile = await getUserProfile(userId, client);
         const userName = profile?.displayName;
         const remainingTurns = getRemainingTurns(userId);
+        const conversationCount = history.length + 1; // 現在のメッセージを含む
+        const useNameInResponse = shouldUseName(conversationCount);
         
         // 制限関連の質問チェック
         if (isAskingAboutLimits(message)) {
-            return getLimitExplanation(remainingTurns, userName);
+            return getLimitExplanation(remainingTurns, userName, useNameInResponse);
         }
         
         // お焚き上げの質問チェック
@@ -348,7 +374,7 @@ async function generateAIResponse(message, history, userId, client) {
         
         // 会話履歴をOpenAI形式に変換
         const messages = [
-            { role: 'system', content: getCharacterPersonality(userName, remainingTurns) },
+            { role: 'system', content: getCharacterPersonality(userName, remainingTurns, useNameInResponse) },
             ...history,
             { role: 'user', content: message }
         ];
@@ -432,19 +458,24 @@ async function handleEvent(event) {
         
         // 日次制限チェック
         if (!checkDailyLimit(userId)) {
+            const conversationCount = conversationHistory.get(userId)?.length || 0;
+            const useNameInResponse = shouldUseName(conversationCount);
+            
             await client.replyMessage(replyToken, {
                 type: 'text',
-                text: SYSTEM_MESSAGES.dailyLimitReached(userName)
+                text: SYSTEM_MESSAGES.dailyLimitReached(userName, useNameInResponse)
             });
             return;
         }
         
         // 会話履歴の管理
         let history = conversationHistory.get(userId) || [];
+        const conversationCount = history.length + 1;
+        const useNameInResponse = shouldUseName(conversationCount);
         
         // 初回メッセージの場合（改善版）
         if (history.length === 0) {
-            const welcomeMessage = SYSTEM_MESSAGES.welcome(userName);
+            const welcomeMessage = SYSTEM_MESSAGES.welcome(userName, useNameInResponse);
             
             await client.replyMessage(replyToken, {
                 type: 'text',
@@ -463,15 +494,16 @@ async function handleEvent(event) {
         // お焚き上げ提案の確認
         let finalResponse = aiResponse;
         if (shouldSuggestPurification(userId, userMessage, history)) {
-            finalResponse = aiResponse + "\n\n" + getPurificationSuggestion(userName);
+            finalResponse = aiResponse + "\n\n" + getPurificationSuggestion(userName, useNameInResponse);
         }
         
         // 使用回数更新と残数通知
         const usageCount = updateDailyUsage(userId);
         const remaining = LIMITS.DAILY_TURN_LIMIT - usageCount;
         
-        if (remaining <= 3 && remaining > 0) {
-            finalResponse += "\n\n" + SYSTEM_MESSAGES.remainingTurns(remaining, userName);
+        // 🆕 Task 1: 残数通知を3回から開始（3回以下 → 3回から）
+        if (remaining <= 3) {
+            finalResponse += "\n\n" + SYSTEM_MESSAGES.remainingTurns(remaining, userName, useNameInResponse);
         }
         
         // 会話履歴更新
@@ -562,7 +594,7 @@ app.get('/', (req, res) => {
         <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px; background: linear-gradient(135deg, #ffeaa7, #fab1a0);">
             <h1>🐱⛩️ つきみ（猫神主Bot）⛩️🐱</h1>
             <p>神社の猫「つきみ」があなたの心の相談をお聞きします</p>
-            <p>サーバーは正常に稼働していますにゃ ✨</p>
+            <p><strong>v1.2.0</strong> - サーバーは正常に稼働していますにゃ ✨</p>
             <div style="margin-top: 30px;">
                 <a href="/health" style="background: #55a3ff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin: 0 10px;">ヘルスチェック</a>
                 <a href="/admin" style="background: #667eea; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin: 0 10px;">管理画面</a>
@@ -581,7 +613,7 @@ app.get('/health', (req, res) => {
         status: 'healthy',
         timestamp: new Date().toISOString(),
         service: 'つきみ（猫神主Bot）',
-        version: '1.1.0',
+        version: '1.2.0',
         uptime: Math.floor(process.uptime()),
         stats: {
             totalUsers: stats.totalUsers.size,
@@ -598,7 +630,17 @@ app.get('/health', (req, res) => {
             maxUsers: LIMITS.MAX_USERS,
             dailyTurnLimit: LIMITS.DAILY_TURN_LIMIT
         },
-        message: "つきみが元気に稼働中ですにゃ ✨"
+        improvements: {
+            version: '1.2.0',
+            priority1_fixes: [
+                '残数通知: 3回から開始',
+                '名前呼び頻度: 4回に1回',
+                '初回挨拶: 簡略化',
+                'お焚き上げ同意: はい/お願いします対応',
+                '完了メッセージ: 再訪促進追加'
+            ]
+        },
+        message: "つきみv1.2.0が元気に稼働中ですにゃ ✨"
     };
     
     res.json(health);
@@ -612,7 +654,6 @@ app.get('/admin', (req, res) => {
     res.send(`
         <html>
         <head>
-            <title>つきみ 管理メニュー</title>
             <meta charset="UTF-8">
             <style>
                 body { 
@@ -639,6 +680,14 @@ app.get('/admin', (req, res) => {
                     text-align: center;
                     font-weight: bold;
                 }
+                .version-info {
+                    background: #e17055;
+                    color: white;
+                    padding: 15px;
+                    border-radius: 10px;
+                    margin: 20px 0;
+                    text-align: left;
+                }
                 .menu-item {
                     display: block;
                     background: linear-gradient(45deg, #ff9a9e, #fecfef);
@@ -662,10 +711,21 @@ app.get('/admin', (req, res) => {
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>🐱⛩️ つきみ 管理メニュー</h1>
+                    <h1>🐱⛩️ つきみ 管理メニュー v1.2.0</h1>
                     <div class="status">
-                        ✅ v1.1.0稼働中 | 参拝者: ${stats.totalUsers.size}名 | 本日: ${todayStats.users.size}名 | 相談: ${stats.totalTurns}回
+                        ✅ v1.2.0稼働中 | 参拝者: ${stats.totalUsers.size}名 | 本日: ${todayStats.users.size}名 | 相談: ${stats.totalTurns}回
                     </div>
+                </div>
+                
+                <div class="version-info">
+                    <h3>🆕 v1.2.0 Priority 1修正完了</h3>
+                    <ul style="margin: 10px 0;">
+                        <li>✅ 残数通知: 3回から開始</li>
+                        <li>✅ 名前呼び頻度: 4回に1回</li>
+                        <li>✅ 初回挨拶: 簡略化</li>
+                        <li>✅ お焚き上げ同意: はい/お願いします対応</li>
+                        <li>✅ 完了メッセージ: 再訪促進追加</li>
+                    </ul>
                 </div>
                 
                 <a href="/health" class="menu-item">
@@ -674,6 +734,10 @@ app.get('/admin', (req, res) => {
                 
                 <a href="/admin/stats" class="menu-item">
                     📊 統計ダッシュボード
+                </a>
+                
+                <a href="/test" class="menu-item">
+                    🧪 システムテスト
                 </a>
             </div>
         </body>
@@ -706,7 +770,7 @@ app.get('/admin/stats', (req, res) => {
         <!DOCTYPE html>
         <html>
         <head>
-            <title>つきみ 統計情報</title>
+            <title>つきみ 統計情報 v1.2.0</title>
             <meta charset="UTF-8">
             <style>
                 body { 
@@ -818,19 +882,29 @@ app.get('/admin/stats', (req, res) => {
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>🐱⛩️ つきみ統計情報 ⛩️🐱</h1>
+                    <h1>🐱⛩️ つきみ統計情報 v1.2.0 ⛩️🐱</h1>
                     <p>最終更新: ${new Date().toLocaleString('ja-JP')}</p>
                 </div>
                 
                 <div class="improvements">
-                    <h3>🆕 v1.1.0 改善内容</h3>
-                    <ul style="text-align: left; margin: 10px 0;">
-                        <li>✅ ユーザー名での呼び掛け対応</li>
-                        <li>✅ お焚き上げ誤発動防止</li>
-                        <li>✅ 制限回数の正確な回答</li>
-                        <li>✅ 共感重視のキャラクター調整</li>
-                        <li>✅ キャラクター名「つきみ」設定</li>
-                    </ul>
+                    <h3>🆕 v1.2.0 Priority 1修正完了</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 15px;">
+                        <div>
+                            <strong>会話品質改善:</strong>
+                            <ul style="margin: 5px 0; text-align: left;">
+                                <li>✅ 残数通知: 3回から開始</li>
+                                <li>✅ 名前頻度: 4回に1回</li>
+                                <li>✅ 初回挨拶: 簡略化</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <strong>機能改善:</strong>
+                            <ul style="margin: 5px 0; text-align: left;">
+                                <li>✅ お焚き上げ: はい対応</li>
+                                <li>✅ 完了メッセージ: 再訪促進</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="stats-grid">
@@ -885,7 +959,7 @@ app.get('/admin/stats', (req, res) => {
                 </div>
                 
                 <div class="footer">
-                    <p>🐾 つきみが皆さんの心に寄り添っています 🐾</p>
+                    <p>🐾 つきみv1.2.0が皆さんの心に寄り添っています 🐾</p>
                     <p style="font-size: 0.9em; margin-top: 15px;">
                         システム稼働時間: ${Math.floor(process.uptime() / 3600)}時間${Math.floor((process.uptime() % 3600) / 60)}分
                     </p>
@@ -925,6 +999,7 @@ app.post('/admin/cleanup', express.json(), (req, res) => {
     
     res.json({
         message: 'クリーンアップ完了にゃ',
+        version: '1.2.0',
         timestamp: new Date().toISOString(),
         before,
         after,
@@ -935,20 +1010,21 @@ app.post('/admin/cleanup', express.json(), (req, res) => {
 // テストエンドポイント
 app.get('/test', (req, res) => {
     res.json({
-        message: 'つきみは元気ですにゃ！',
+        message: 'つきみv1.2.0は元気ですにゃ！',
         timestamp: new Date().toISOString(),
-        version: '1.1.0',
+        version: '1.2.0',
         webhook_url: req.get('host') + '/webhook',
         environment_check: {
             line_secret: !!process.env.LINE_CHANNEL_SECRET,
             line_token: !!process.env.LINE_CHANNEL_ACCESS_TOKEN,
             openai_key: !!process.env.OPENAI_API_KEY
         },
-        improvements: [
-            'ユーザー名での呼び掛け',
-            'お焚き上げ誤発動防止',
-            '制限回数の正確回答',
-            '共感重視キャラクター'
+        priority1_improvements: [
+            '残数通知: 3回から開始',
+            '名前呼び頻度: 4回に1回',
+            '初回挨拶: 簡略化',
+            'お焚き上げ同意: はい/お願いします対応',
+            '完了メッセージ: 再訪促進追加'
         ]
     });
 });
@@ -956,7 +1032,7 @@ app.get('/test', (req, res) => {
 // サーバー開始
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log('🐱⛩️ つきみ（猫神主Bot）が起動しました ⛩️🐱');
+    console.log('🐱⛩️ つきみv1.2.0（猫神主Bot）が起動しました ⛩️🐱');
     console.log(`ポート: ${PORT}`);
     console.log(`環境: ${process.env.NODE_ENV || 'development'}`);
     console.log('');
@@ -966,22 +1042,22 @@ app.listen(PORT, () => {
     console.log(`セッション時間: ${LIMITS.SESSION_TIMEOUT / 60000}分`);
     console.log(`クリーンアップ間隔: ${LIMITS.CLEANUP_INTERVAL / 60000}分`);
     console.log('');
-    console.log('=== 🆕 v1.1.0 改善内容 ===');
-    console.log('• ユーザー名での呼び掛け対応');
-    console.log('• お焚き上げ誤発動防止');
-    console.log('• 制限回数の正確な回答');
-    console.log('• 共感重視のキャラクター調整');
-    console.log('• キャラクター名「つきみ」設定');
-    console.log('===========================');
+    console.log('=== 🆕 v1.2.0 Priority 1修正完了 ===');
+    console.log('• ✅ 残数通知: 3回から開始');
+    console.log('• ✅ 名前呼び頻度: 4回に1回');
+    console.log('• ✅ 初回自己紹介: 簡略化');
+    console.log('• ✅ お焚き上げ同意: はい/お願いします対応');
+    console.log('• ✅ 完了後メッセージ: 再訪促進追加');
+    console.log('====================================');
     console.log('');
     console.log('=== 🎯 PMF検証項目 ===');
     console.log('• お焚き上げ利用率: 目標30%以上');
     console.log('• 平均相談ターン数: 目標+2-3ターン');
     console.log('• ユーザー継続率: 翌日再利用率');
-    console.log('• 会話品質: 誤動作・混乱の削減');
+    console.log('• 会話品質: v1.2.0で大幅改善');
     console.log('========================');
     console.log('');
-    console.log('つきみが神社でお待ちしていますにゃ... 🐾');
+    console.log('つきみがv1.2.0で神社でお待ちしていますにゃ... 🐾');
     
     // 起動時の環境変数チェック
     const requiredEnvs = ['LINE_CHANNEL_SECRET', 'LINE_CHANNEL_ACCESS_TOKEN', 'OPENAI_API_KEY'];
@@ -992,6 +1068,6 @@ app.listen(PORT, () => {
         console.error('Renderの環境変数設定を確認してください');
     } else {
         console.log('✅ 環境変数設定完了');
-        console.log('✅ 会話品質改善版(v1.1.0)準備完了');
+        console.log('✅ v1.2.0 Priority 1修正版準備完了');
     }
 });
