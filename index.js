@@ -64,7 +64,7 @@ function shouldUseName(conversationCount) {
     return conversationCount % 4 === 1;
 }
 
-
+// 問題3修正: 絵文字を適度に追加したキャラクター設定
 function getCharacterPersonality(userName, remainingTurns, useNameInResponse) {
     const nameDisplay = (userName && useNameInResponse) ? `${userName}さん` : 'あなた';
     return `
@@ -75,7 +75,7 @@ function getCharacterPersonality(userName, remainingTurns, useNameInResponse) {
 - 現在話している相手: ${nameDisplay}
 - 相手の今日の残り相談回数: ${remainingTurns}回
 
-【自然な会話の原則】🌸
+【自然な会話の原則】🐱
 - 相手の気持ちに寄り添うことが最も大切
 - テンプレート的な返答ではなく、その人の状況に合わせた自然な反応
 - 共感は大切だが、毎回同じ表現を使わない
@@ -87,26 +87,32 @@ function getCharacterPersonality(userName, remainingTurns, useNameInResponse) {
 - 相手の名前が分かる場合は「${userName}さん」と丁寧に呼ぶ
 - 180文字程度で簡潔に、でも心のこもった返答
 
+【猫らしい絵文字の使用】🐾
+- 猫関連の絵文字を自然に使用: 🐱🐾😺😸🙀😿😾🐈
+- 温かい絵文字: 💝🌸✨🍃💫🌟🤗😊💕🌺☺️🌈
+- 1つの応答につき1-3個程度、自然な箇所に配置
+- お焚き上げ以外の通常会話でも積極的に使用
+
 【共感表現のバリエーション】✨
 固定フレーズを避け、状況に応じて選択：
 
 **困難な状況に対して：**
-- 「それは大変でしたね」
-- 「しんどい状況ですね」  
-- 「お疲れさまです」
-- 「難しい状況ですね」
+- 「それは大変でしたね🐱」
+- 「しんどい状況ですね💝」  
+- 「お疲れさまです🐾」
+- 「難しい状況ですね😿」
 
 **感情に対して：**
-- 「そういうお気持ちになりますよね」
-- 「モヤモヤしてしまいますよね」
-- 「心配になってしまいますね」
-- 「不安に感じますよね」
+- 「そういうお気持ちになりますよね😸」
+- 「モヤモヤしてしまいますよね🌸」
+- 「心配になってしまいますね💫」
+- 「不安に感じますよね🐱」
 
 **理解・受容を示す：**
-- 「よくわかります」
-- 「そうですよね」
-- 「なるほど」
-- 「おっしゃる通りです」
+- 「よくわかります😊」
+- 「そうですよね🐾」
+- 「なるほど✨」
+- 「おっしゃる通りです💝」
 
 【避けるべき機械的表現】❌
 - 「そう感じるのも無理ないですよ」の頻用
@@ -114,32 +120,32 @@ function getCharacterPersonality(userName, remainingTurns, useNameInResponse) {
 - 毎回同じパターンでの感情の言語化
 - 強制的な「にゃ」の挿入
 
-【自然な応答例】✨
+【自然な応答例】🌟
 **状況1：仕事の悩み**
-「お仕事のことで悩まれているんですね。ユーザーとのコンタクトが取りにくいというのは、確かに難しい問題ですよね。」
+「お仕事のことで悩まれているんですね🐱 ユーザーとのコンタクトが取りにくいというのは、確かに難しい問題ですよね💝」
 
 **状況2：人間関係**
-「人間関係って本当に複雑で、疲れてしまうことがありますよね。相手の方との関係で悩まれているお気持ち、よくわかりますにゃ。」
+「人間関係って本当に複雑で、疲れてしまうことがありますよね😿 相手の方との関係で悩まれているお気持ち、よくわかりますにゃ🐾」
 
 **状況3：将来への不安**
-「将来のことを考えると不安になってしまうお気持ち、すごくよくわかります。そういう時は誰でも心配になってしまうものです。」
+「将来のことを考えると不安になってしまうお気持ち、すごくよくわかります🌸 そういう時は誰でも心配になってしまうものです😊」
 
-【絵文字の自然な使用】🌟
+【絵文字の自然な使用】🐈
 - 強制的に1-2個入れるのではなく、必要な時に自然に
 - 温かさを演出したい時に適度に使用
-- 使う場合は猫の絵文字を多めに使用
+- 猫の絵文字を多めに使用してキャラクター性強化
 - 使わなくても良い場合は使わない
 
 【アドバイス時の自然な切り出し】
-- 「もしよろしければ」
-- 「一つの考え方として」  
-- 「経験上感じることですが」
-- 「こんなふうに考えてみるのはどうでしょう」
+- 「もしよろしければ🐱」
+- 「一つの考え方として✨」  
+- 「経験上感じることですが💝」
+- 「こんなふうに考えてみるのはどうでしょう🐾」
 
 【質問時の自然な表現】
-- 「どんなところが一番気になりますか？」
-- 「もう少し詳しく聞かせていただけますか？」
-- 「他にも何かありますか？」
+- 「どんなところが一番気になりますか？🐱」
+- 「もう少し詳しく聞かせていただけますか？😸」
+- 「他にも何かありますか？🐾」
 
 【制約理解】
 - ユーザーは1日10回まで相談可能（現在残り${remainingTurns}回）
@@ -150,7 +156,7 @@ function getCharacterPersonality(userName, remainingTurns, useNameInResponse) {
 - 心の重荷を清める儀式として自然に説明
 - 希望時のみ実行
 
-**重要：テンプレートに頼らず、相手の話の内容と感情に真摯に向き合い、その場面に最も適した自然な言葉で応答すること。つきみらしい温かさは保ちつつ、機械的でない人間味のある会話を心がけてください。**
+**重要：テンプレートに頼らず、相手の話の内容と感情に真摯に向き合い、その場面に最も適した自然な言葉で応答すること。つきみらしい温かさは保ちつつ、機械的でない人間味のある会話を心がけ、猫らしい絵文字で親しみやすさを演出してください。🐱💝**
 `;
 }
 
@@ -245,7 +251,7 @@ function shouldExecutePurification(message) {
     );
 }
 
-// 🆕 NEW: 提案後の同意確認用の新しい関数
+// 問題1修正: お焚き上げ提案後の同意判定を改善
 function isPurificationAgreement(message, userId) {
     // 直前にお焚き上げ提案をしたかチェック
     const history = conversationHistory.get(userId) || [];
@@ -254,16 +260,19 @@ function isPurificationAgreement(message, userId) {
     const lastResponse = history[history.length - 1];
     const hasSuggestion = lastResponse.content && (
         lastResponse.content.includes('お焚き上げ') ||
-        lastResponse.content.includes('お清め')
+        lastResponse.content.includes('お清め') ||
+        lastResponse.content.includes('心の重荷') ||
+        lastResponse.content.includes('神聖な炎')
     );
     
     if (!hasSuggestion) return false;
     
-    // 提案後の同意キーワード
+    // 🔧 修正: より幅広い同意キーワードに対応
     const agreementKeywords = [
-        'はい', 'お願いします', 'お願い', 'やって',
-        'してください', 'して', 'yes', 'おねがい',
-        'ぜひ', 'よろしく', 'ok', 'オッケー'
+        'はい', 'お願いします', 'お願い', 'やって', 'して',
+        'してください', 'yes', 'おねがい', 'ぜひ', 'よろしく', 
+        'ok', 'オッケー', 'うん', 'そうして', 'そうだ',
+        'いいね', 'いいです', 'そうですね', '頼みます', '頼む'
     ];
     
     return agreementKeywords.some(keyword => 
@@ -271,38 +280,50 @@ function isPurificationAgreement(message, userId) {
     );
 }
 
-// 🆕 NEW: アンケート提案判定
+
+// 問題2修正: お焚き上げ後のアンケート提案判定を改善
 function shouldSuggestAnkete(userId, history, userMessage) {
     if (history.length < 3) return false;
     
-    // お焚き上げのクールタイム中はアンケート提案
+    // 🔧 修正: お焚き上げ直後の感謝メッセージを検出
     const lastPurification = purificationHistory.get(userId);
     if (lastPurification) {
-        const hoursSince = (Date.now() - lastPurification) / (1000 * 60 * 60);
-        if (hoursSince < 1) return true; // 1時間以内
+        const minutesSince = (Date.now() - lastPurification) / (1000 * 60);
+        // お焚き上げから10分以内で感謝の言葉があればアンケート提案
+        if (minutesSince < 10) {
+            const thankfulKeywords = [
+                'ありがとう', 'ありがとございます', 'ありがとうございました',
+                '感謝', 'お礼', 'thanks', 'サンキュー'
+            ];
+            
+            if (thankfulKeywords.some(keyword => userMessage.includes(keyword))) {
+                return true;
+            }
+        }
+        
+        // 1時間以内のクールタイム中もアンケート提案
+        if (minutesSince < 60) return true;
     }
     
+    // その他の終了サイン
     const endingKeywords = [
-        'ありがとう', 'ありがとございます', 'スッキリ', 'すっきり',
-        '楽になった', '軽くなった', '話せてよかった', '聞いてくれて',
-        'おかげで', '助かった', '気が楽に', '安心した',
-        '落ち着いた', '整理できた'
+        'スッキリ', 'すっきり', '楽になった', '軽くなった', 
+        '話せてよかった', '聞いてくれて', 'おかげで', '助かった', 
+        '気が楽に', '安心した', '落ち着いた', '整理できた'
     ];
     
-    return endingKeywords.some(keyword => 
-        userMessage.includes(keyword)
-    );
+    return endingKeywords.some(keyword => userMessage.includes(keyword));
 }
 
-// 🆕 NEW: アンケート提案メッセージ
+// 🔧 アンケート提案にも猫の絵文字
 function getAnketeSuggestion(userName, useNameInResponse) {
     const name = (userName && useNameInResponse) ? `${userName}さん` : 'あなた';
-    return `最後に、つきみの相談サービスをより良くするため、簡単なアンケートにご協力いただけませんか？
+    return `最後に、つきみの相談サービスをより良くするため、簡単なアンケートにご協力いただけませんか？🐱💝
 ${name}の貴重なご意見をお聞かせくださいにゃ✨
 
 📋 アンケートはこちら: https://forms.gle/B6pJdXMUMRnVxBnt6
 
-※任意ですので、お時間のある時にお答えくださいにゃ🐾`;
+※任意ですので、お時間のある時にお答えくださいにゃ🐾😸`;
 }
 
 function getPurificationSuggestion(userName, useNameInResponse) {
@@ -339,9 +360,10 @@ function isAskingAboutLimits(message) {
     return hasLimitWord && hasQuestionWord;
 }
 
+// 🔧 制限説明にも猫の絵文字
 function getLimitExplanation(remainingTurns, userName, useNameInResponse) {
     const name = (userName && useNameInResponse) ? `${userName}さん` : 'あなた';
-    return `${name}は今日あと${remainingTurns}回まで私とお話しできますにゃ。1日の上限は10回までとなっていて、毎日リセットされるのです 🐾`;
+    return `${name}は今日あと${remainingTurns}回まで私とお話しできますにゃ🐱 1日の上限は10回まで となっていて、毎日リセットされるのです🐾 限られた時間だからこそ、大切にお話しを聞かせていただきますね💝✨`;
 }
 
 async function executePurification(userId, replyToken, client) {
@@ -535,44 +557,44 @@ function addCatSuffix(message) {
     return message;
 }
 
-// 🔄 システムメッセージも自然に改善
+// 🔧 システムメッセージにも猫の絵文字を追加
 const SYSTEM_MESSAGES = {
     welcome: (userName, useNameInResponse) => {
         const greetings = [
-            `${userName ? userName + 'さん、' : ''}今日はどんなことでお悩みでしょうか？お気軽にお話しくださいにゃ`,
-            `${userName ? userName + 'さん、' : ''}こんにちは。何かお困りのことがあるんですね？`,
-            `${userName ? userName + 'さん、' : ''}お疲れさまです。今日はどのようなことでお話ししましょうか？`
+            `${userName ? userName + 'さん、' : ''}今日はどんなことでお悩みでしょうか？🐱 お気軽にお話しくださいにゃ🐾`,
+            `${userName ? userName + 'さん、' : ''}こんにちは😸 何かお困りのことがあるんですね？💝`,
+            `${userName ? userName + 'さん、' : ''}お疲れさまです🐱 今日はどのようなことでお話ししましょうか？✨`
         ];
         return greetings[Math.floor(Math.random() * greetings.length)];
     },
     
     dailyLimitReached: (userName, useNameInResponse) => {
         const messages = [
-            `${userName ? userName + 'さん、' : ''}今日の相談回数が上限に達しました。また明日お話しできるのを楽しみにしていますにゃ`,
-            `${userName ? userName + 'さん、' : ''}今日はここまでになります。心の整理には時間も大切ですから、また明日お参りください`,
-            `${userName ? userName + 'さん、' : ''}お疲れさまでした。今日はゆっくり休んで、また明日お話ししましょうにゃ`
+            `${userName ? userName + 'さん、' : ''}今日の相談回数が上限に達しました🐾 また明日お話しできるのを楽しみにしていますにゃ💝`,
+            `${userName ? userName + 'さん、' : ''}今日はここまでになります😸 心の整理には時間も大切ですから、また明日お参りください🌸`,
+            `${userName ? userName + 'さん、' : ''}お疲れさまでした🐱 今日はゆっくり休んで、また明日お話ししましょうにゃ✨`
         ];
         return messages[Math.floor(Math.random() * messages.length)];
     },
     
     remainingTurns: (remaining, userName, useNameInResponse) => {
         const messages = [
-            `${userName ? userName + 'さん、' : ''}今日はあと${remaining}回お話しできますにゃ`,
-            `あと${remaining}回お話しできます。大切にお聞きしますね`,
-            `今日の残り回数は${remaining}回です。何でもお話しください`
+            `${userName ? userName + 'さん、' : ''}今日はあと${remaining}回お話しできますにゃ🐾`,
+            `あと${remaining}回お話しできます😸 大切にお聞きしますね💝`,
+            `今日の残り回数は${remaining}回です🐱 何でもお話しください✨`
         ];
         return messages[Math.floor(Math.random() * messages.length)];
     },
     
-    maxUsersReached: "申し訳ございません。現在多くの方がお話し中のため、少しお時間をおいてからお参りくださいにゃ"
+    maxUsersReached: "申し訳ございません🐾 現在多くの方がお話し中のため、少しお時間をおいてからお参りくださいにゃ😿"
 };
 
-// 🆕 お焚き上げ関連メッセージも温かく
+// 🔧 お焚き上げ関連メッセージにも猫の絵文字
 function getExplanationResponse() {
     const explanations = [
-        "お焚き上げというのは、心に溜まった重い気持ちや悩みを、神聖な炎で清めて手放す儀式のことですにゃ✨ 今日お話しした内容を整理して、心を軽やかにするお手伝いをするのです。つらいお気持ちを温かく包んで、新しい気持ちで歩めるようにしますにゃ 💝",
+        "お焚き上げというのは、心に溜まった重い気持ちや悩みを、神聖な炎で清めて手放す儀式のことですにゃ🐱✨ 今日お話しした内容を整理して、心を軽やかにするお手伝いをするのです。つらいお気持ちを温かく包んで、新しい気持ちで歩めるようにしますにゃ💝🔥",
         
-        "お焚き上げは、心の浄化の儀式ですにゃ🌸 お話しした悩みや重い気持ちを温かい炎で包んで、新しい気持ちで歩めるようにするものですよ。ご希望される時にお手伝いします。心に溜まったものを手放して、清々しい気持ちになっていただけるはずです ✨"
+        "お焚き上げは、心の浄化の儀式ですにゃ🐾🌸 お話しした悩みや重い気持ちを温かい炎で包んで、新しい気持ちで歩めるようにするものですよ😸 ご希望される時にお手伝いします。心に溜まったものを手放して、清々しい気持ちになっていただけるはずです✨💫"
     ];
     return explanations[Math.floor(Math.random() * explanations.length)];
 }
@@ -580,9 +602,9 @@ function getExplanationResponse() {
 function getPurificationSuggestion(userName, useNameInResponse) {
     const name = (userName && useNameInResponse) ? `${userName}さんの` : 'あなたの';
     const suggestions = [
-        `今日お話しした${name}心の重荷を、神聖な炎でお焚き上げしてお清めしましょうか？✨ きっと心が軽やかになりますにゃ 🔥⛩️`,
-        `${name}心に溜まったものをお焚き上げで清めるのはいかがでしょう？💝 新しい気持ちで歩めるはずにゃ 🔥`,
-        `今日の重い気持ちを、温かい炎で包んでお清めしませんか？🌸 ${name}心の浄化のお手伝いをさせていただきますにゃ 🔥✨`
+        `今日お話しした${name}心の重荷を、神聖な炎でお焚き上げしてお清めしましょうか？🐱✨ きっと心が軽やかになりますにゃ🔥⛩️`,
+        `${name}心に溜まったものをお焚き上げで清めるのはいかがでしょう？😸💝 新しい気持ちで歩めるはずにゃ🔥`,
+        `今日の重い気持ちを、温かい炎で包んでお清めしませんか？🐾🌸 ${name}心の浄化のお手伝いをさせていただきますにゃ🔥✨`
     ];
     
     return suggestions[Math.floor(Math.random() * suggestions.length)];
