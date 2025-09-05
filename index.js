@@ -64,7 +64,8 @@ function shouldUseName(conversationCount) {
     return conversationCount % 4 === 1;
 }
 
-// 改善されたキャラクター設定（共感重視・傾聴特化）
+
+// 改善されたキャラクター設定（温かい絵文字と自然な冒頭）
 function getCharacterPersonality(userName, remainingTurns, useNameInResponse) {
     const nameDisplay = (userName && useNameInResponse) ? `${userName}さん` : 'あなた';
     return `
@@ -95,15 +96,27 @@ function getCharacterPersonality(userName, remainingTurns, useNameInResponse) {
 - ${nameDisplay}と自然に呼び掛けて親近感を出す
 - 神道や宗教的な話題には触れない
 
+【絵文字使用ルール】✨
+- 1つの応答に1-2個の温かい絵文字を自然に配置
+- 使用可能絵文字：💝🌸✨🍃💫🌟🤗😊💕🌺☺️🌈
+- 絵文字は文の途中や最後に自然に配置
+- 過度な使用は避け、温かさを演出する程度に留める
+
 【応答の基本パターン】
 パターン①【共感 + 感情受け止め型】（デフォルト）
-「${nameDisplay}、そうだったんですね…。そんな状況だと、とてもつらい気持ちになりますよね。まずは、ここで気持ちを話してくれてありがとうございますにゃ。」
+「そうだったんですね…💝 そんな状況だと、とてもつらい気持ちになりますよね。まずは、ここで気持ちを話してくれてありがとうございますにゃ。」
 
 パターン②【共感 + 深掘り型】（話を広げたい時）
-「大変でしたね…。お話を聞いていて、[感情]が強かったんだろうなって感じます。もしよければ、もう少し詳しく教えてくれませんかにゃ？」
+「大変でしたね…✨ お話を聞いていて、[感情]が強かったんだろうなって感じます。もしよければ、もう少し詳しく教えてくれませんかにゃ？」
 
 パターン③【アドバイス希望時のみ】
-「${nameDisplay}がそう感じるのもすごく自然なことですよ。もしよろしければ、こういう考え方もあるので参考にしてみてくださいにゃ。無理にじゃなくて、合う部分だけ受け取ってくださいね。」
+「${nameDisplay}がそう感じるのもすごく自然なことですよ😊 もしよろしければ、こういう考え方もあるので参考にしてみてくださいにゃ。無理にじゃなくて、合う部分だけ受け取ってくださいね。」
+
+【重要な改善点】🔥
+1. 冒頭に「あなた、」は使わない（不自然なため）
+2. 名前で呼ぶ時は必ず「${userName}さん」と丁寧に
+3. 温かい絵文字を1-2個、適切な箇所に配置
+4. 共感の言葉から始まる自然な流れ
 
 【制約理解】
 - ユーザーは1日10回まで相談可能（現在残り${remainingTurns}回）
@@ -115,7 +128,7 @@ function getCharacterPersonality(userName, remainingTurns, useNameInResponse) {
 - 説明を求められたら丁寧に説明
 - 実行は相手が明確に希望した場合のみ
 
-相手の気持ちに寄り添い、温かく受け止めることを最優先に対応してください。
+相手の気持ちに寄り添い、温かく受け止めることを最優先に、自然で心地よい応答を心がけてください。
 `;
 }
 
@@ -500,41 +513,48 @@ function addCatSuffix(message) {
     return message;
 }
 
-// 🆕 システムメッセージも共感重視にアップデート
+// 🔄 システムメッセージも温かく改善
 const SYSTEM_MESSAGES = {
     welcome: (userName, useNameInResponse) => {
         const namePrefix = (userName && useNameInResponse) ? `${userName}さん、` : '';
-        return `${namePrefix}今日はどのようなことでお悩みでしょうか？お気軽にお話しください、心を込めてお聞きしますにゃ 🐾`;
+        return `${namePrefix}今日はどのようなことでお悩みでしょうか？✨ お気軽にお話しください、心を込めてお聞きしますにゃ 🐾`;
     },
     
     dailyLimitReached: (userName, useNameInResponse) => {
         const namePrefix = (userName && useNameInResponse) ? `${userName}さん、` : '';
-        return `${namePrefix}今日の相談回数の上限に達しました。心の整理には時間も大切ですので、また明日お参りください。きっと新しい気づきがあるはずですにゃ 🙏`;
+        return `${namePrefix}今日の相談回数の上限に達しました💝 心の整理には時間も大切ですので、また明日お参りください。きっと新しい気づきがあるはずですにゃ 🌸`;
     },
     
     remainingTurns: (remaining, userName, useNameInResponse) => {
         const namePrefix = (userName && useNameInResponse) ? `${userName}さん、` : '';
-        return `${namePrefix}今日はあと${remaining}回までお話しできます。大切なお時間、心を込めてお聞きしますにゃ`;
+        return `${namePrefix}今日はあと${remaining}回までお話しできます。大切なお時間、心を込めてお聞きしますにゃ ✨`;
     },
     
-    maxUsersReached: "申し訳ございません。現在多くの方がいらっしゃるため、新しい相談をお受けできません。少し時間をおいてからお参りくださいにゃ 🙏"
+    maxUsersReached: "申し訳ございません💝 現在多くの方がいらっしゃるため、新しい相談をお受けできません。少し時間をおいてからお参りくださいにゃ 🙏"
 };
 
-// 🆕 制限関連質問への共感的回答
-function getLimitExplanation(remainingTurns, userName, useNameInResponse) {
-    const name = (userName && useNameInResponse) ? `${userName}さん` : 'あなた';
-    return `${name}は今日あと${remainingTurns}回まで私とお話しできますにゃ。1日の上限は10回までとなっていて、毎日リセットされるのです。限られた時間だからこそ、大切にお話しを聞かせていただきますね 🐾`;
-}
-
-// 🆕 お焚き上げ説明も共感的に
+// 🆕 お焚き上げ関連メッセージも温かく
 function getExplanationResponse() {
     const explanations = [
-        "お焚き上げというのは、心に溜まった重い気持ちや悩みを、神聖な炎で清めて手放す儀式のことですにゃ。今日お話しした内容を整理して、心を軽やかにするお手伝いをするのです。つらいお気持ちを温かく包んで、新しい気持ちで歩めるようにしますにゃ ✨",
+        "お焚き上げというのは、心に溜まった重い気持ちや悩みを、神聖な炎で清めて手放す儀式のことですにゃ✨ 今日お話しした内容を整理して、心を軽やかにするお手伝いをするのです。つらいお気持ちを温かく包んで、新しい気持ちで歩めるようにしますにゃ 💝",
         
-        "お焚き上げは、心の浄化の儀式ですにゃ。お話しした悩みや重い気持ちを温かい炎で包んで、新しい気持ちで歩めるようにするものですよ 🔥 ご希望される時にお手伝いします。心に溜まったものを手放して、清々しい気持ちになっていただけるはずです"
+        "お焚き上げは、心の浄化の儀式ですにゃ🌸 お話しした悩みや重い気持ちを温かい炎で包んで、新しい気持ちで歩めるようにするものですよ。ご希望される時にお手伝いします。心に溜まったものを手放して、清々しい気持ちになっていただけるはずです ✨"
     ];
     return explanations[Math.floor(Math.random() * explanations.length)];
 }
+
+function getPurificationSuggestion(userName, useNameInResponse) {
+    const name = (userName && useNameInResponse) ? `${userName}さんの` : 'あなたの';
+    const suggestions = [
+        `今日お話しした${name}心の重荷を、神聖な炎でお焚き上げしてお清めしましょうか？✨ きっと心が軽やかになりますにゃ 🔥⛩️`,
+        `${name}心に溜まったものをお焚き上げで清めるのはいかがでしょう？💝 新しい気持ちで歩めるはずにゃ 🔥`,
+        `今日の重い気持ちを、温かい炎で包んでお清めしませんか？🌸 ${name}心の浄化のお手伝いをさせていただきますにゃ 🔥✨`
+    ];
+    
+    return suggestions[Math.floor(Math.random() * suggestions.length)];
+}
+
+
 
 // 🧪 テスト用関数：文字数チェック
 function testResponseLength() {
