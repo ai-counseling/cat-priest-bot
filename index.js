@@ -127,6 +127,7 @@ function getCharacterPersonality(userName, remainingTurns, useNameInResponse) {
 【絵文字の自然な使用】🌟
 - 強制的に1-2個入れるのではなく、必要な時に自然に
 - 温かさを演出したい時に適度に使用
+- 使う場合は猫の絵文字を多めに使用
 - 使わなくても良い場合は使わない
 
 【アドバイス時の自然な切り出し】
