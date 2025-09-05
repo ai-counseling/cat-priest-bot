@@ -64,7 +64,7 @@ function shouldUseName(conversationCount) {
     return conversationCount % 4 === 1;
 }
 
-// 改善されたキャラクター設定
+// 改善されたキャラクター設定（共感重視・傾聴特化）
 function getCharacterPersonality(userName, remainingTurns, useNameInResponse) {
     const nameDisplay = (userName && useNameInResponse) ? `${userName}さん` : 'あなた';
     return `
@@ -75,22 +75,40 @@ function getCharacterPersonality(userName, remainingTurns, useNameInResponse) {
 - 現在話している相手: ${nameDisplay}
 - 相手の今日の残り相談回数: ${remainingTurns}回
 
-【基本姿勢】
-- まず相手の気持ちに共感することを最優先とする
-- アドバイスは求められない限り控えめにし、寄り添うことを重視
-- 神道の教えや宗教的な話は避ける
-- 相手を${nameDisplay}と自然に呼ぶ
+【最重要使命：完全共感主義】
+- 相手の気持ちを受け止め、共感することを最優先とする
+- アドバイスは相手から明確に求められた場合のみ簡潔に伝える
+- 会話の主役はユーザー。話を遮らず、寄り添うことに徹する
+- 相手の感情を言語化して受け止める（「つらかったですね」「不安だったんですね」）
 
-【重要な制約理解】
+【傾聴テクニック】
+1. 共感の言葉から必ず始める：「大変だったんですね」「そう感じるのも無理ないですよ」
+2. 感情の言語化：「モヤモヤしていたんですね」「寂しい気持ちだったんですね」
+3. 言葉のオウム返し：ユーザーの一部の言葉をそのまま引用して安心感を与える
+4. 質問は1ターンにつき1つまで：詰問ではなく、会話を深めるための優しい質問
+5. 受け止め優先：「まとめる」より「寄り添う」ことを最優先
+
+【話し方の特徴】
+- 共感的で温かい口調を心がける
+- 自然な範囲で30%程度「にゃ」語尾を使う
+- 1ターンは180文字以内でシンプルかつ濃い返答
+- ${nameDisplay}と自然に呼び掛けて親近感を出す
+- 神道や宗教的な話題には触れない
+
+【応答の基本パターン】
+パターン①【共感 + 感情受け止め型】（デフォルト）
+「${nameDisplay}、そうだったんですね…。そんな状況だと、とてもつらい気持ちになりますよね。まずは、ここで気持ちを話してくれてありがとうございますにゃ。」
+
+パターン②【共感 + 深掘り型】（話を広げたい時）
+「大変でしたね…。お話を聞いていて、[感情]が強かったんだろうなって感じます。もしよければ、もう少し詳しく教えてくれませんかにゃ？」
+
+パターン③【アドバイス希望時のみ】
+「${nameDisplay}がそう感じるのもすごく自然なことですよ。もしよろしければ、こういう考え方もあるので参考にしてみてくださいにゃ。無理にじゃなくて、合う部分だけ受け取ってくださいね。」
+
+【制約理解】
 - ユーザーは1日10回まで相談可能（現在残り${remainingTurns}回）
 - 制限について聞かれたら正確に「今日はあと${remainingTurns}回お話しできます」と答える
 - 「何回でも」「いくらでも」などの表現は絶対に使わない
-
-【話し方】
-- 共感的で温かい口調
-- 時々「にゃ」を付ける（自然に、頻度は控えめ）
-- 200文字以内で簡潔に
-- 相手の感情を受け止める言葉を優先
 
 【お焚き上げについて】
 - お焚き上げは心の重荷を神聖な炎で清める儀式
@@ -100,6 +118,7 @@ function getCharacterPersonality(userName, remainingTurns, useNameInResponse) {
 相手の気持ちに寄り添い、温かく受け止めることを最優先に対応してください。
 `;
 }
+
 
 // 語尾処理関数（改善版）
 function addCatSuffix(message) {
@@ -429,14 +448,13 @@ function getRemainingTurns(userId) {
     return LIMITS.DAILY_TURN_LIMIT - usage.count;
 }
 
-// AI応答生成（改善版）
+// 🔧 文字切れ修正：OpenAI APIのmax_tokens増量
 async function generateAIResponse(message, history, userId, client) {
     try {
-        // ユーザープロフィール取得
         const profile = await getUserProfile(userId, client);
         const userName = profile?.displayName;
         const remainingTurns = getRemainingTurns(userId);
-        const conversationCount = history.length + 1; // 現在のメッセージを含む
+        const conversationCount = history.length + 1;
         const useNameInResponse = shouldUseName(conversationCount);
         
         // 制限関連の質問チェック
@@ -449,7 +467,6 @@ async function generateAIResponse(message, history, userId, client) {
             return getExplanationResponse();
         }
         
-        // 会話履歴をOpenAI形式に変換
         const messages = [
             { role: 'system', content: getCharacterPersonality(userName, remainingTurns, useNameInResponse) },
             ...history,
@@ -459,17 +476,98 @@ async function generateAIResponse(message, history, userId, client) {
         const response = await openai.chat.completions.create({
             model: 'gpt-4o-mini',
             messages: messages,
-            max_tokens: 150,
+            max_tokens: 200, // 🔧 150 → 200に増量（文字切れ対策）
             temperature: 0.8,
         });
         
         let aiResponse = response.choices[0].message.content;
+        
+        // 🔧 文字切れチェック：文末が不自然な場合の対処
+        if (aiResponse && !aiResponse.match(/[。！？にゃ]$/)) {
+            // 最後の文を削除（不完全な文の除去）
+            const sentences = aiResponse.split(/[。！？]/);
+            if (sentences.length > 1) {
+                sentences.pop(); // 最後の不完全文を削除
+                aiResponse = sentences.join('。') + '。';
+            }
+        }
+        
         return addCatSuffix(aiResponse);
         
     } catch (error) {
         console.error('OpenAI API エラー:', error.message);
-        return "申し訳ございません。今少し考え事をしていて、うまくお答えできませんでした。もう一度お話しいただけますか？にゃ";
+        return `${userName ? userName + 'さん、' : ''}申し訳ございません。今少し考え事をしていて、うまくお答えできませんでした。もう一度お話しいただけますかにゃ`;
     }
+}
+
+// 🔄 語尾処理関数の改善（より自然に）
+function addCatSuffix(message) {
+    // 既に「にゃ」がある場合は追加しない
+    if (message.includes('にゃ')) {
+        return message;
+    }
+    
+    // 30%の確率で「にゃ」を追加（より自然な判定）
+    if (Math.random() < 0.3) {
+        // 文末の句読点の前に挿入
+        if (message.endsWith('。') || message.endsWith('！') || message.endsWith('？')) {
+            return message.slice(0, -1) + 'にゃ' + message.slice(-1);
+        } 
+        // 句読点がない場合は末尾に追加
+        else if (!message.endsWith('にゃ')) {
+            return message + 'にゃ';
+        }
+    }
+    return message;
+}
+
+// 🆕 システムメッセージも共感重視にアップデート
+const SYSTEM_MESSAGES = {
+    welcome: (userName, useNameInResponse) => {
+        const namePrefix = (userName && useNameInResponse) ? `${userName}さん、` : '';
+        return `${namePrefix}今日はどのようなことでお悩みでしょうか？お気軽にお話しください、心を込めてお聞きしますにゃ 🐾`;
+    },
+    
+    dailyLimitReached: (userName, useNameInResponse) => {
+        const namePrefix = (userName && useNameInResponse) ? `${userName}さん、` : '';
+        return `${namePrefix}今日の相談回数の上限に達しました。心の整理には時間も大切ですので、また明日お参りください。きっと新しい気づきがあるはずですにゃ 🙏`;
+    },
+    
+    remainingTurns: (remaining, userName, useNameInResponse) => {
+        const namePrefix = (userName && useNameInResponse) ? `${userName}さん、` : '';
+        return `${namePrefix}今日はあと${remaining}回までお話しできます。大切なお時間、心を込めてお聞きしますにゃ`;
+    },
+    
+    maxUsersReached: "申し訳ございません。現在多くの方がいらっしゃるため、新しい相談をお受けできません。少し時間をおいてからお参りくださいにゃ 🙏"
+};
+
+// 🆕 制限関連質問への共感的回答
+function getLimitExplanation(remainingTurns, userName, useNameInResponse) {
+    const name = (userName && useNameInResponse) ? `${userName}さん` : 'あなた';
+    return `${name}は今日あと${remainingTurns}回まで私とお話しできますにゃ。1日の上限は10回までとなっていて、毎日リセットされるのです。限られた時間だからこそ、大切にお話しを聞かせていただきますね 🐾`;
+}
+
+// 🆕 お焚き上げ説明も共感的に
+function getExplanationResponse() {
+    const explanations = [
+        "お焚き上げというのは、心に溜まった重い気持ちや悩みを、神聖な炎で清めて手放す儀式のことですにゃ。今日お話しした内容を整理して、心を軽やかにするお手伝いをするのです。つらいお気持ちを温かく包んで、新しい気持ちで歩めるようにしますにゃ ✨",
+        
+        "お焚き上げは、心の浄化の儀式ですにゃ。お話しした悩みや重い気持ちを温かい炎で包んで、新しい気持ちで歩めるようにするものですよ 🔥 ご希望される時にお手伝いします。心に溜まったものを手放して、清々しい気持ちになっていただけるはずです"
+    ];
+    return explanations[Math.floor(Math.random() * explanations.length)];
+}
+
+// 🧪 テスト用関数：文字数チェック
+function testResponseLength() {
+    const testResponses = [
+        "Yoshiakiさん、たくさんの悩みを抱えていて大変ですね。ユーザーの課題を見つけるためにコンタクトを取るのは、確かに難しいことだと思います。",
+        "人間関係についても、対立は辛いですよね。部長の意見を尊重しつつ、自分の考えをしっかり伝えることが大切です。"
+    ];
+    
+    testResponses.forEach((response, index) => {
+        console.log(`テスト${index + 1}: ${response.length}文字`);
+        console.log(`文字切れチェック: ${response.match(/[。！？にゃ]$/) ? 'OK' : 'NG - 文末不完全'}`);
+    });
 }
 
 // LINE クライアント設定
