@@ -138,27 +138,6 @@ function addCatSuffix(message) {
     return message;
 }
 
-// システムメッセージ（改善版）
-const SYSTEM_MESSAGES = {
-    // 🆕 Task 3: 初回自己紹介を簡略化
-    welcome: (userName, useNameInResponse) => {
-        const namePrefix = (userName && useNameInResponse) ? `${userName}さん、` : '';
-        return `${namePrefix}今日はどのようなことでお悩みでしょうか？お気軽にお話しくださいにゃ 🐾`;
-    },
-    
-    dailyLimitReached: (userName, useNameInResponse) => {
-        const namePrefix = (userName && useNameInResponse) ? `${userName}さん、` : '';
-        return `${namePrefix}今日の相談回数の上限に達しました。心の整理には時間も大切ですので、また明日お参りくださいにゃ。きっと新しい気づきがあるはずです 🙏`;
-    },
-    
-    // 🆕 Task 1: 残数通知を3回から開始（3回以下 → 3回から）
-    remainingTurns: (remaining, userName, useNameInResponse) => {
-        const namePrefix = (userName && useNameInResponse) ? `${userName}さん、` : '';
-        return `${namePrefix}今日はあと${remaining}回までお話しできます。大切なお時間、心を込めてお聞きしますにゃ`;
-    },
-    
-    maxUsersReached: "申し訳ございません。現在多くの方がいらっしゃるため、新しい相談をお受けできません。少し時間をおいてからお参りください 🙏",
-};
 
 // お焚き上げ関連関数（改善版）
 function isQuestionAboutPurification(message) {
