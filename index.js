@@ -194,6 +194,7 @@ function isQuestionAboutPurification(message) {
     return hasPurificationWord && hasQuestionPattern;
 }
 
+// 問題1修正: お焚き上げ提案判定を大幅拡張
 function shouldSuggestPurification(userId, message, history) {
     if (history.length < 3) return false;
     
@@ -203,15 +204,32 @@ function shouldSuggestPurification(userId, message, history) {
         if (hoursSince < 1) return false;
     }
     
+    // 🔧 大幅拡張: 会話終了のニュアンスを幅広く検出
     const endingKeywords = [
+        // 感謝・満足
         'ありがとう', 'ありがとございます', 'スッキリ', 'すっきり',
         '楽になった', '軽くなった', '話せてよかった', '聞いてくれて',
         'おかげで', '助かった', '気が楽に', '安心した',
-        '落ち着いた', '整理できた'
+        '落ち着いた', '整理できた',
+        
+        // 🆕 理解・納得の表現
+        'なるほど', 'そうですね', 'わかりました', 'わかった',
+        'そうか', 'そういうことか', 'そうなんですね', 'なるほどね',
+        'ということですね', 'そういう考え方もありますね',
+        
+        // 🆕 会話終了のサイン
+        'よくわかりました', 'とても参考になりました', '勉強になりました',
+        'もう大丈夫', '大丈夫になりました', '頑張ってみます',
+        'やってみます', 'そうしてみます', 'そうします',
+        
+        // 🆕 前向きな表現
+        '明日から', '今度から', 'これから', 'さっそく',
+        '試してみます', 'チャレンジしてみます'
     ];
     
     return endingKeywords.some(keyword => message.includes(keyword));
 }
+
 
 function shouldExecutePurification(message) {
     // 🚨 NEW: 質問文の厳格判定 - 誤発動防止
@@ -251,7 +269,7 @@ function shouldExecutePurification(message) {
     );
 }
 
-// 問題1修正: お焚き上げ提案後の同意判定を改善
+// 問題2修正: お焚き上げ同意判定を大幅拡張
 function isPurificationAgreement(message, userId) {
     // 直前にお焚き上げ提案をしたかチェック
     const history = conversationHistory.get(userId) || [];
@@ -267,12 +285,27 @@ function isPurificationAgreement(message, userId) {
     
     if (!hasSuggestion) return false;
     
-    // 🔧 修正: より幅広い同意キーワードに対応
+    // 🔧 大幅拡張: より自然な同意表現を検出
     const agreementKeywords = [
-        'はい', 'お願いします', 'お願い', 'やって', 'して',
-        'してください', 'yes', 'おねがい', 'ぜひ', 'よろしく', 
-        'ok', 'オッケー', 'うん', 'そうして', 'そうだ',
-        'いいね', 'いいです', 'そうですね', '頼みます', '頼む'
+        // 直接的な同意
+        'はい', 'うん', 'そうですね', 'そうします',
+        'yes', 'ok', 'オッケー',
+        
+        // 依頼表現 - 🆕 「お願い」単体も追加
+        'お願いします', 'お願い', 'おねがい', 'おねがいします',
+        'お願いいたします', 'よろしくお願いします',
+        
+        // 実行依頼
+        'やって', 'やってください', 'して', 'してください',
+        'してもらえますか', 'していただけますか',
+        
+        // 希望表現
+        'ぜひ', 'よろしく', 'お任せします',
+        '頼みます', '頼む', 'やりましょう',
+        
+        // 🆕 自然な会話での同意
+        'いいね', 'いいです', 'いいですね', 'そうしましょう',
+        'それで', 'それでお願いします', 'そうしてください'
     ];
     
     return agreementKeywords.some(keyword => 
@@ -281,19 +314,24 @@ function isPurificationAgreement(message, userId) {
 }
 
 
-// 問題2修正: お焚き上げ後のアンケート提案判定を改善
+// 問題3修正: アンケート提案判定を改善
 function shouldSuggestAnkete(userId, history, userMessage) {
     if (history.length < 3) return false;
     
-    // 🔧 修正: お焚き上げ直後の感謝メッセージを検出
+    // 🔧 修正: お焚き上げ直後の感謝メッセージ検出時間を延長
     const lastPurification = purificationHistory.get(userId);
     if (lastPurification) {
         const minutesSince = (Date.now() - lastPurification) / (1000 * 60);
-        // お焚き上げから10分以内で感謝の言葉があればアンケート提案
-        if (minutesSince < 10) {
+        
+        // 🆕 30分以内に延長 & 感謝キーワードを拡張
+        if (minutesSince < 30) {
             const thankfulKeywords = [
                 'ありがとう', 'ありがとございます', 'ありがとうございました',
-                '感謝', 'お礼', 'thanks', 'サンキュー'
+                'ありがと', 'あざす', 'サンキュー', 'thanks',
+                '感謝', 'お礼', '感謝します', '感謝しています',
+                // 🆕 満足を示す表現も追加
+                'スッキリ', 'すっきり', '清々しい', 'さっぱり',
+                '軽くなった', '楽になった', 'よかった'
             ];
             
             if (thankfulKeywords.some(keyword => userMessage.includes(keyword))) {
@@ -314,6 +352,7 @@ function shouldSuggestAnkete(userId, history, userMessage) {
     
     return endingKeywords.some(keyword => userMessage.includes(keyword));
 }
+
 
 // 🔧 アンケート提案にも猫の絵文字
 function getAnketeSuggestion(userName, useNameInResponse) {
@@ -778,28 +817,41 @@ async function handleEvent(event) {
     }
 }
 
-// 自動クリーンアップ関数
+// 問題4修正: 日次制限システムの致命的バグを修正
 function cleanupInactiveSessions() {
     const now = Date.now();
     let cleanedCount = 0;
     
     for (const [userId, timestamp] of lastMessageTime) {
         if (now - timestamp > LIMITS.SESSION_TIMEOUT) {
+            // 🚨 重要な修正: conversationHistoryのみ削除、dailyUsageは保持
             conversationHistory.delete(userId);
             lastMessageTime.delete(userId);
             userSessions.delete(userId);
             cleanedCount++;
             
             console.log(`セッション削除: ユーザー${userId.substring(0, 8)}... (30分非アクティブ)`);
+            // 🚨 注意: dailyUsageは削除しない！日次制限を維持
         }
     }
     
+    // お焚き上げ履歴のクリーンアップ（24時間後）
     for (const [userId, timestamp] of purificationHistory) {
         if (now - timestamp > 24 * 60 * 60 * 1000) {
             purificationHistory.delete(userId);
         }
     }
     
+    // 🆕 dailyUsageの適切なクリーンアップ（日付変更時のみ）
+    const today = new Date().toISOString().split('T')[0];
+    for (const [userId, usage] of dailyUsage) {
+        if (usage.date !== today) {
+            // 前日のデータのみ削除
+            dailyUsage.delete(userId);
+        }
+    }
+    
+    // 統計データのクリーンアップ（1週間後）
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
     const weekAgoStr = weekAgo.toISOString().split('T')[0];
@@ -811,7 +863,8 @@ function cleanupInactiveSessions() {
     }
     
     if (cleanedCount > 0) {
-        console.log(`自動クリーンアップ実行: ${cleanedCount}セッション削除`);
+        console.log(`🧹 自動クリーンアップ実行: ${cleanedCount}セッション削除`);
+        console.log(`📊 アクティブユーザー: ${userSessions.size}, 日次制限管理中: ${dailyUsage.size}`);
     }
 }
 
