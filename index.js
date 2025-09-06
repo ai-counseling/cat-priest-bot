@@ -217,16 +217,46 @@ function removeEndingLevelFromResponse(aiResponse) {
 }
 
 // AI終了度判定によるお焚き上げ提案
-function shouldSuggestPurificationByAI(userId, endingLevel, history) {
-    if (history.length < 3) return false;
-    
-    const lastPurification = purificationHistory.get(userId);
-    if (lastPurification) {
-        const hoursSince = (Date.now() - lastPurification) / (1000 * 60 * 60);
-        if (hoursSince < 1) return false;
+// 継続意図をAIで判定する関数（新規追加）
+async function checkContinuationIntent(userMessage) {
+    try {
+        const messages = [
+            {
+                role: 'system',
+                content: `ユーザーのメッセージを分析して、会話を続ける意図があるかを判定してください。
+
+【判定基準】
+- 質問がある場合: YES
+- アドバイスや追加情報を求めている場合: YES  
+- 感謝のみで話を終えようとしている場合: NO
+
+最後に必ず以下の形式で記載してください：
+[CONTINUATION: YES] または [CONTINUATION: NO]`
+            },
+            {
+                role: 'user', 
+                content: userMessage
+            }
+        ];
+        
+        const response = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: messages,
+            max_tokens: 100,
+            temperature: 0.3,
+        });
+        
+        const result = response.choices[0].message.content;
+        const match = result.match(/\[CONTINUATION:\s*(YES|NO)\]/);
+        const hasContinuation = match ? match[1] === 'YES' : false;
+        
+        console.log(`継続意図判定: ${hasContinuation ? 'YES' : 'NO'} - "${userMessage}"`);
+        return hasContinuation;
+        
+    } catch (error) {
+        console.error('継続意図判定エラー:', error.message);
+        return true; // エラー時は安全側に倒してお焚き上げしない
     }
-    
-    return endingLevel >= 2;
 }
 
 // お焚き上げ実行判定（キーワードベース）
@@ -716,7 +746,7 @@ async function handleEvent(event) {
         console.log(`会話終了度: ${endingLevel} (0=継続中, 1=やや終了, 2=明確な終了)`);
         
         let finalResponse = aiResponse;
-        if (shouldSuggestPurificationByAI(userId, endingLevel, history)) {
+        if (await shouldSuggestPurificationByAI(userId, endingLevel, history)) {
             console.log('🔥 AI終了度判定でお焚き上げ提案');
             finalResponse = aiResponse + "\n\n" + getPurificationSuggestion(userName, useNameInResponse);
         } else if (shouldSuggestAnkete(userId, history, userMessage)) {
