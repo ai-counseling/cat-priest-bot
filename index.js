@@ -193,6 +193,14 @@ function addCatSuffix(message) {
 
 // お焚き上げ関連関数
 function isQuestionAboutPurification(message) {
+    // 実行キーワードの場合は質問扱いしない
+const executionKeywords = [
+    'お焚き上げ', '【お焚き上げ】', 'おたきあげ', 'たきあげ',
+    'おたきあげして', 'たきあげして', 'お焚き上げして'
+];
+if (executionKeywords.some(keyword => message === keyword || message.includes(keyword + 'し'))) {
+    return false;
+}    
     const questionPatterns = [
         'って何', 'とは', 'について教えて', 'どんなもの', 'なんですか',
         '？', '何ですか', 'わからない', '知らない', 'どういう意味',
