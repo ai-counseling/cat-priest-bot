@@ -1,4 +1,4 @@
-// 猫神主Bot「つきみ」- v1.3.0 AI終了度判定システム - 完全版
+// 猫神主Bot「つきみ」- v1.3.1 シンプル終了判定システム - 完全版
 require('dotenv').config();
 const express = require('express');
 const line = require('@line/bot-sdk');
@@ -64,7 +64,7 @@ function shouldUseName(conversationCount) {
     return conversationCount % 4 === 1;
 }
 
-// キャラクター設定（終了度判定機能付き）
+// キャラクター設定
 function getCharacterPersonality(userName, remainingTurns, useNameInResponse) {
     const nameDisplay = (userName && useNameInResponse) ? `${userName}さん` : 'あなた';
     return `
@@ -158,8 +158,6 @@ function getCharacterPersonality(userName, remainingTurns, useNameInResponse) {
 - 心の重荷を清める儀式として自然に説明
 - 希望時のみ実行
 
-
-
 **重要：テンプレートに頼らず、相手の話の内容と感情に真摯に向き合い、その場面に最も適した自然な言葉で応答すること。つきみらしい温かさは保ちつつ、機械的でない人間味のある会話を心がけ、猫らしい絵文字で親しみやすさを演出してください。🐱💝**
 `;
 }
@@ -183,13 +181,14 @@ function addCatSuffix(message) {
 // お焚き上げ関連関数
 function isQuestionAboutPurification(message) {
     // 実行キーワードの場合は質問扱いしない
-const executionKeywords = [
-    'お焚き上げ', '【お焚き上げ】', 'おたきあげ', 'たきあげ',
-    'おたきあげして', 'たきあげして', 'お焚き上げして'
-];
-if (executionKeywords.some(keyword => message === keyword || message.includes(keyword + 'し'))) {
-    return false;
-}    
+    const executionKeywords = [
+        'お焚き上げ', '【お焚き上げ】', 'おたきあげ', 'たきあげ',
+        'おたきあげして', 'たきあげして', 'お焚き上げして'
+    ];
+    if (executionKeywords.some(keyword => message === keyword || message.includes(keyword + 'し'))) {
+        return false;
+    }
+    
     const questionPatterns = [
         'って何', 'とは', 'について教えて', 'どんなもの', 'なんですか',
         '？', '何ですか', 'わからない', '知らない', 'どういう意味',
@@ -201,7 +200,6 @@ if (executionKeywords.some(keyword => message === keyword || message.includes(ke
     
     return hasPurificationWord && hasQuestionPattern;
 }
-
 
 // AI応答から終了サインを検出してお焚き上げ提案判定
 function shouldSuggestPurificationFromResponse(aiResponse, userMessage, userId, history) {
@@ -231,8 +229,6 @@ function shouldSuggestPurificationFromResponse(aiResponse, userMessage, userId, 
     return hasResponseEndingSign || hasUserEndingSign;
 }
 
-
-
 // お焚き上げ実行判定（キーワードベース）
 function shouldExecutePurificationByKeyword(message) {
     const negativePatterns = [
@@ -248,8 +244,8 @@ function shouldExecutePurificationByKeyword(message) {
     
     const positiveKeywords = [
         '【お焚き上げ】',
-        'お焚き上げ', 
-        'おたきあげ',  
+        'お焚き上げ',
+        'おたきあげ',
         'たきあげ',
         'おたきあげして',
         'たきあげして', 
@@ -320,18 +316,18 @@ ${name}の貴重なご意見をお聞かせくださいにゃ✨
 function getPurificationSuggestion(userName, useNameInResponse) {
     const name = (userName && useNameInResponse) ? `${userName}さんの` : 'あなたの';
     const suggestions = [
-    `今日お話しした${name}心の重荷を、神聖な炎でお焚き上げしてお清めしましょうか？🐱✨
+        `今日お話しした${name}心の重荷を、神聖な炎でお焚き上げしてお清めしましょうか？🐱✨
 
 お焚き上げする場合は「【お焚き上げ】」とメッセージを送ってね🔥⛩️`,
-    
-    `${name}心に溜まったものをお焚き上げで清めるのはいかがでしょう？😸💝
+        
+        `${name}心に溜まったものをお焚き上げで清めるのはいかがでしょう？😸💝
 
 お焚き上げする場合は「【お焚き上げ】」とメッセージを送ってね🔥`,
-    
-    `今日の重い気持ちを、温かい炎で包んでお清めしませんか？🐾🌸
+        
+        `今日の重い気持ちを、温かい炎で包んでお清めしませんか？🐾🌸
 
 お焚き上げする場合は「【お焚き上げ】」とメッセージを送ってね🔥✨`
-];
+    ];
     
     return suggestions[Math.floor(Math.random() * suggestions.length)];
 }
@@ -486,8 +482,8 @@ function getRemainingTurns(userId) {
     return LIMITS.DAILY_TURN_LIMIT - usage.count;
 }
 
-// OpenAI応答生成（終了度判定付き）
-async function generateAIResponseWithEndingAnalysis(message, history, userId, client) {
+// OpenAI応答生成
+async function generateAIResponse(message, history, userId, client) {
     try {
         const profile = await getUserProfile(userId, client);
         const userName = profile?.displayName;
@@ -496,17 +492,11 @@ async function generateAIResponseWithEndingAnalysis(message, history, userId, cl
         const useNameInResponse = shouldUseName(conversationCount);
         
         if (isAskingAboutLimits(message)) {
-            return {
-                response: getLimitExplanation(remainingTurns, userName, useNameInResponse),
-                endingLevel: 0
-            };
+            return getLimitExplanation(remainingTurns, userName, useNameInResponse);
         }
         
         if (isQuestionAboutPurification(message)) {
-            return {
-                response: getExplanationResponse(),
-                endingLevel: 0
-            };
+            return getExplanationResponse();
         }
         
         const messages = [
@@ -533,18 +523,16 @@ async function generateAIResponseWithEndingAnalysis(message, history, userId, cl
         }
         
         const finalResponse = addCatSuffix(aiResponse);
-                
-        return {
-            response: finalResponse,
-            endingLevel: endingLevel
-        };
+        
+        console.log(`AI応答生成完了: レスポンス長=${finalResponse.length}文字`);
+        
+        return finalResponse;
         
     } catch (error) {
         console.error('OpenAI API エラー:', error.message);
-        return {
-            response: `${userName ? userName + 'さん、' : ''}申し訳ございません。今少し考え事をしていて、うまくお答えできませんでした。もう一度お話しいただけますかにゃ`,
-            endingLevel: 0
-        };
+        const profile = await getUserProfile(userId, client);
+        const userName = profile?.displayName;
+        return `${userName ? userName + 'さん、' : ''}申し訳ございません。今少し考え事をしていて、うまくお答えできませんでした。もう一度お話しいただけますかにゃ`;
     }
 }
 
@@ -711,19 +699,17 @@ async function handleEvent(event) {
             return;
         }
         
-        const aiResult = await generateAIResponseWithEndingAnalysis(userMessage, history, userId, client);
-        const aiResponse = aiResult.response;
-        const endingLevel = aiResult.endingLevel;
+        const aiResponse = await generateAIResponse(userMessage, history, userId, client);
         
-        console.log(`会話終了度: ${endingLevel} (0=継続中, 1=やや終了, 2=明確な終了)`);
+        console.log(`AI応答生成完了: "${aiResponse}"`);
         
-       let finalResponse = aiResponse;
-      if (shouldSuggestPurificationFromResponse(aiResponse, userMessage, userId, history)) {
-          console.log('🔥 応答分析でお焚き上げ提案');
-          finalResponse = aiResponse + "\n\n" + getPurificationSuggestion(userName, useNameInResponse);
-      } else if (shouldSuggestAnkete(userId, history, userMessage)) {
-          finalResponse = aiResponse + "\n\n" + getAnketeSuggestion(userName, useNameInResponse);
-      }
+        let finalResponse = aiResponse;
+        if (shouldSuggestPurificationFromResponse(aiResponse, userMessage, userId, history)) {
+            console.log('🔥 応答分析でお焚き上げ提案');
+            finalResponse = aiResponse + "\n\n" + getPurificationSuggestion(userName, useNameInResponse);
+        } else if (shouldSuggestAnkete(userId, history, userMessage)) {
+            finalResponse = aiResponse + "\n\n" + getAnketeSuggestion(userName, useNameInResponse);
+        }        
         
         const usageCount = updateDailyUsage(userId);
         const remaining = LIMITS.DAILY_TURN_LIMIT - usageCount;
@@ -775,7 +761,7 @@ app.get('/', (req, res) => {
         <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px; background: linear-gradient(135deg, #ffeaa7, #fab1a0);">
             <h1>🐱⛩️ つきみ（猫神主Bot）⛩️🐱</h1>
             <p>神社の猫「つきみ」があなたの心の相談をお聞きします</p>
-            <p><strong>v1.3.0</strong> - AI終了度判定システム搭載！サーバーは正常に稼働していますにゃ ✨</p>
+            <p><strong>v1.3.1</strong> - シンプル終了判定システム搭載！サーバーは正常に稼働していますにゃ ✨</p>
             <div style="margin-top: 30px;">
                 <a href="/health" style="background: #55a3ff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin: 0 10px;">ヘルスチェック</a>
                 <a href="/admin" style="background: #667eea; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin: 0 10px;">管理画面</a>
@@ -793,7 +779,7 @@ app.get('/health', (req, res) => {
         status: 'healthy',
         timestamp: new Date().toISOString(),
         service: 'つきみ（猫神主Bot）',
-        version: '1.3.0',
+        version: '1.3.1',
         uptime: Math.floor(process.uptime()),
         stats: {
             totalUsers: stats.totalUsers.size,
@@ -810,16 +796,16 @@ app.get('/health', (req, res) => {
             maxUsers: LIMITS.MAX_USERS,
             dailyTurnLimit: LIMITS.DAILY_TURN_LIMIT
         },
-        ai_ending_detection: {
-            version: '1.3.0',
+        simple_ending_detection: {
+            version: '1.3.1',
             features: [
-                'AIによる柔軟な会話終了判定',
-                '「一旦大丈夫」「また今度」等も確実に捕捉',
-                'キーワード依存から文脈理解へ進化',
-                'アドバイス表現をより優しく調整'
+                'シンプルな終了サイン検出',
+                'AI応答内容からの終了判定',
+                'ユーザーメッセージからの感謝表現検出',
+                '複雑な終了度判定を削除してシンプル化'
             ]
         },
-        message: 'つきみv1.3.0がAI終了度判定で更に賢く稼働中ですにゃ ✨'
+        message: 'つきみv1.3.1がシンプル終了判定で安定稼働中ですにゃ ✨'
     };
     
     res.json(health);
@@ -858,8 +844,8 @@ app.get('/admin', (req, res) => {
                     text-align: center;
                     font-weight: bold;
                 }
-                .ai-features {
-                    background: #6c5ce7;
+                .simple-features {
+                    background: #74b9ff;
                     color: white;
                     padding: 20px;
                     border-radius: 10px;
@@ -889,19 +875,19 @@ app.get('/admin', (req, res) => {
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>🐱⛩️ つきみ 管理メニュー v1.3.0</h1>
+                    <h1>🐱⛩️ つきみ 管理メニュー v1.3.1</h1>
                     <div class="status">
-                        ✅ v1.3.0 AI終了度判定システム稼働中！ | 参拝者: ${stats.totalUsers.size}名 | 本日: ${todayStats.users.size}名 | 相談: ${stats.totalTurns}回
+                        ✅ v1.3.1 シンプル終了判定システム稼働中！ | 参拝者: ${stats.totalUsers.size}名 | 本日: ${todayStats.users.size}名 | 相談: ${stats.totalTurns}回
                     </div>
                 </div>
                 
-                <div class="ai-features">
-                    <h3>🧠 v1.3.0 AI終了度判定システム</h3>
+                <div class="simple-features">
+                    <h3>✨ v1.3.1 シンプル終了判定システム</h3>
                     <ul style="margin: 10px 0;">
-                        <li>✅ AIによる柔軟な会話終了判定</li>
-                        <li>✅ 「一旦大丈夫」「また今度」等も確実に捕捉</li>
-                        <li>✅ キーワード依存から文脈理解へ進化</li>
-                        <li>✅ アドバイス表現をより優しく調整</li>
+                        <li>✅ 複雑な終了度判定を削除してシンプル化</li>
+                        <li>✅ AI応答内容から直接終了サインを検出</li>
+                        <li>✅ 「また何かあれば」等の応答で確実提案</li>
+                        <li>✅ 保守性とデバッグ性を大幅向上</li>
                     </ul>
                 </div>
                 
@@ -945,7 +931,7 @@ app.get('/admin/stats', (req, res) => {
         <!DOCTYPE html>
         <html>
         <head>
-            <title>つきみ 統計情報 v1.3.0</title>
+            <title>つきみ 統計情報 v1.3.1</title>
             <meta charset="UTF-8">
             <style>
                 body { 
@@ -997,8 +983,8 @@ app.get('/admin/stats', (req, res) => {
                     font-size: 1em;
                     opacity: 0.9;
                 }
-                .ai-features {
-                    background: #6c5ce7;
+                .simple-features {
+                    background: #74b9ff;
                     color: white;
                     padding: 20px;
                     border-radius: 10px;
@@ -1057,25 +1043,25 @@ app.get('/admin/stats', (req, res) => {
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>🐱⛩️ つきみ統計情報 v1.3.0 ⛩️🐱</h1>
+                    <h1>🐱⛩️ つきみ統計情報 v1.3.1 ⛩️🐱</h1>
                     <p>最終更新: ${new Date().toLocaleString('ja-JP')}</p>
                 </div>
                 
-                <div class="ai-features">
-                    <h3>🧠 v1.3.0 AI終了度判定システム</h3>
+                <div class="simple-features">
+                    <h3>✨ v1.3.1 シンプル終了判定システム</h3>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 15px;">
                         <div>
-                            <strong>AI判定システム:</strong>
+                            <strong>シンプル化:</strong>
                             <ul style="margin: 5px 0; text-align: left;">
-                                <li>✅ 文脈理解による終了度判定</li>
-                                <li>✅ 3段階レベル（0-2）で精密判定</li>
+                                <li>✅ 複雑な終了度判定を削除</li>
+                                <li>✅ 応答内容から直接検出</li>
                             </ul>
                         </div>
                         <div>
-                            <strong>捕捉精度向上:</strong>
+                            <strong>精度向上:</strong>
                             <ul style="margin: 5px 0; text-align: left;">
-                                <li>✅ 「一旦大丈夫」「また今度」対応</li>
-                                <li>✅ アドバイス表現を優しく調整</li>
+                                <li>✅ 「また何かあれば」で確実提案</li>
+                                <li>✅ 保守性とデバッグ性向上</li>
                             </ul>
                         </div>
                     </div>
@@ -1133,7 +1119,7 @@ app.get('/admin/stats', (req, res) => {
                 </div>
                 
                 <div class="footer">
-                    <p>🐾 つきみv1.3.0がAI終了度判定で更に賢く稼働中です 🐾</p>
+                    <p>🐾 つきみv1.3.1がシンプル終了判定で安定稼働中です 🐾</p>
                     <p style="font-size: 0.9em; margin-top: 15px;">
                         システム稼働時間: ${Math.floor(process.uptime() / 3600)}時間${Math.floor((process.uptime() % 3600) / 60)}分
                     </p>
@@ -1172,7 +1158,7 @@ app.post('/admin/cleanup', express.json(), (req, res) => {
     
     res.json({
         message: 'クリーンアップ完了にゃ',
-        version: '1.3.0',
+        version: '1.3.1',
         timestamp: new Date().toISOString(),
         before,
         after,
@@ -1182,8 +1168,8 @@ app.post('/admin/cleanup', express.json(), (req, res) => {
 
 app.get('/test', (req, res) => {
     res.json({
-        message: 'つきみv1.3.0はAI終了度判定で賢く進化しましたにゃ！',
-        version: '1.3.0',
+        message: 'つきみv1.3.1はシンプル終了判定で安定稼働していますにゃ！',
+        version: '1.3.1',
         timestamp: new Date().toISOString(),
         webhook_url: req.get('host') + '/webhook',
         environment_check: {
@@ -1191,11 +1177,11 @@ app.get('/test', (req, res) => {
             line_token: !!process.env.LINE_CHANNEL_ACCESS_TOKEN,
             openai_key: !!process.env.OPENAI_API_KEY
         },
-        ai_ending_detection_completed: [
-            'AIによる柔軟な会話終了判定システム実装',
-            '「一旦大丈夫」「また今度」等の自然な終了表現も捕捉',
-            'キーワード依存から文脈理解への進化',
-            'アドバイス表現をより優しく調整'
+        simple_ending_detection_completed: [
+            'シンプルな終了サイン検出システム実装',
+            'AI応答内容からの直接検出',
+            '複雑な終了度判定を削除してシンプル化',
+            '保守性とデバッグ性を大幅向上'
         ]
     });
 });
@@ -1203,7 +1189,7 @@ app.get('/test', (req, res) => {
 // サーバー開始
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log('🐱⛩️ つきみv1.3.0（猫神主Bot）が起動しました ⛩️🐱');
+    console.log('🐱⛩️ つきみv1.3.1（猫神主Bot）が起動しました ⛩️🐱');
     console.log(`ポート: ${PORT}`);
     console.log(`環境: ${process.env.NODE_ENV || 'development'}`);
     console.log('');
@@ -1213,21 +1199,21 @@ app.listen(PORT, () => {
     console.log(`セッション時間: ${LIMITS.SESSION_TIMEOUT / 60000}分`);
     console.log(`クリーンアップ間隔: ${LIMITS.CLEANUP_INTERVAL / 60000}分`);
     console.log('');
-    console.log('=== 🧠 v1.3.0 AI終了度判定システム ===');
-    console.log('• ✅ AIによる柔軟な会話終了判定');
-    console.log('• ✅ キーワード依存から文脈理解へ進化');
-    console.log('• ✅ 「一旦大丈夫」「また今度」等も確実に捕捉');
-    console.log('• ✅ アドバイス表現をより優しく調整');
+    console.log('=== ✨ v1.3.1 シンプル終了判定システム ===');
+    console.log('• ✅ 複雑な終了度判定を削除してシンプル化');
+    console.log('• ✅ AI応答内容から直接終了サインを検出');
+    console.log('• ✅ 「また何かあれば」等の応答で確実提案');
+    console.log('• ✅ 保守性とデバッグ性を大幅向上');
     console.log('====================================');
     console.log('');
     console.log('=== 🎯 PMF検証項目 ===');
     console.log('• お焚き上げ利用率: 目標30%以上');
     console.log('• 平均相談ターン数: 目標+2-3ターン');
     console.log('• ユーザー継続率: 翌日再利用率');
-    console.log('• 会話品質: v1.3.0でAI終了度判定搭載');
+    console.log('• 会話品質: v1.3.1でシンプル化により安定性向上');
     console.log('========================');
     console.log('');
-    console.log('つきみがv1.3.0で神社でお待ちしていますにゃ... 🐾');
+    console.log('つきみがv1.3.1で神社でお待ちしていますにゃ... 🐾');
     
     // 起動時の環境変数チェック
     const requiredEnvs = ['LINE_CHANNEL_SECRET', 'LINE_CHANNEL_ACCESS_TOKEN', 'OPENAI_API_KEY'];
@@ -1238,13 +1224,13 @@ app.listen(PORT, () => {
         console.error('Renderの環境変数設定を確認してください');
     } else {
         console.log('✅ 環境変数設定完了');
-        console.log('✅ v1.3.0 AI終了度判定システム準備完了');
+        console.log('✅ v1.3.1 シンプル終了判定システム準備完了');
         console.log('');
-        console.log('🧠 新しいAI終了度判定システム:');
-        console.log('  AIが文脈を理解して会話終了度を0-2で判定');
-        console.log('  ENDING_LEVEL: 2で自動的にお焚き上げ提案');
-        console.log('  「一旦大丈夫」「また今度」等も確実に捕捉');
+        console.log('✨ シンプル終了判定システム:');
+        console.log('  AI応答内容から「また何かあれば」等を検出');
+        console.log('  ユーザーメッセージから「ありがとう」等を検出');
+        console.log('  複雑な終了度判定を廃止してシンプル化');
         console.log('');
-        console.log('🎉 つきみv1.3.0は人間らしい判断ができるようになりました！');
+        console.log('🎉 つきみv1.3.1は保守性と信頼性が向上しました！');
     }
 });
