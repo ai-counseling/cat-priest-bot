@@ -303,6 +303,9 @@ function shouldExecutePurificationByKeyword(message) {
     
     const positiveKeywords = [
         '【お焚き上げ】',
+        'お焚き上げ', 
+        'おたきあげ',  
+        'たきあげ',
         'おたきあげして',
         'たきあげして', 
         'お焚き上げして',
