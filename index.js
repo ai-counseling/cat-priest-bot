@@ -548,8 +548,8 @@ async function generateAIResponse(message, history, userId, client) {
 const SYSTEM_MESSAGES = {
     welcome: (userName, useNameInResponse) => {
         const greetings = [
-            `${userName ? userName + 'さん、' : ''}今日はどうされましたか？🐱 お気軽にお話しくださいにゃ🐾`,
-            `${userName ? userName + 'さん、' : ''}こんにちは😸 何かお困りのことがありますか？💝`,
+            `${userName ? userName + 'さん、' : ''}今日はどんなことでお悩みでしょうか？🐱 お気軽にお話しくださいにゃ🐾`,
+            `${userName ? userName + 'さん、' : ''}こんにちは😸 何かお困りのことがあるんですね？💝`,
             `${userName ? userName + 'さん、' : ''}お疲れさまです🐱 今日はどのようなことでお話ししましょうか？✨`
         ];
         return greetings[Math.floor(Math.random() * greetings.length)];
@@ -1249,8 +1249,6 @@ app.listen(PORT, () => {
     console.log('========================');
     console.log('');
     console.log('つきみがv1.2.1で神社でお待ちしていますにゃ... 🐾');
-    
-           
 
     // 起動時の環境変数チェック
     const requiredEnvs = ['LINE_CHANNEL_SECRET', 'LINE_CHANNEL_ACCESS_TOKEN', 'OPENAI_API_KEY'];
