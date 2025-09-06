@@ -158,18 +158,7 @@ function getCharacterPersonality(userName, remainingTurns, useNameInResponse) {
 - 心の重荷を清める儀式として自然に説明
 - 希望時のみ実行
 
-【重要】応答の最後に、この会話の終了度を以下の形式で必ず記載してください：
-- [ENDING_LEVEL: 0] = 会話が継続中、相談や質問が続いている
-- [ENDING_LEVEL: 1] = やや終了に向かっている、話題が一段落している  
-- [ENDING_LEVEL: 2] = 明確に終了のサイン、区切りの意図が感じられる
 
-【終了度判定の基準】
-- ユーザーが納得・理解・満足を示している
-- 感謝の表現がある
-- 「また」「今度」「一旦」「とりあえず」など区切りの言葉
-- 前向きな行動意欲を示している（「やってみます」など）
-- 話題の自然な収束感がある
-- 挨拶や締めくくりの言葉
 
 **重要：テンプレートに頼らず、相手の話の内容と感情に真摯に向き合い、その場面に最も適した自然な言葉で応答すること。つきみらしい温かさは保ちつつ、機械的でない人間味のある会話を心がけ、猫らしい絵文字で親しみやすさを演出してください。🐱💝**
 `;
@@ -213,19 +202,9 @@ if (executionKeywords.some(keyword => message === keyword || message.includes(ke
     return hasPurificationWord && hasQuestionPattern;
 }
 
-// 終了度抽出関数
-function extractEndingLevel(aiResponse) {
-    const match = aiResponse.match(/\[ENDING_LEVEL:\s*(\d+)\]/);
-    return match ? parseInt(match[1]) : 0;
-}
 
-// 応答から終了度表記を除去
-function removeEndingLevelFromResponse(aiResponse) {
-    return aiResponse.replace(/\s*\[ENDING_LEVEL:\s*\d+\]\s*/g, '').trim();
-}
-
-// AI終了度判定によるお焚き上げ提案
-async function shouldSuggestPurificationByAI(userId, endingLevel, history, userMessage) {
+// AI応答から終了サインを検出してお焚き上げ提案判定
+function shouldSuggestPurificationFromResponse(aiResponse, userMessage, userId, history) {
     if (history.length < 3) return false;
     
     const lastPurification = purificationHistory.get(userId);
@@ -234,59 +213,25 @@ async function shouldSuggestPurificationByAI(userId, endingLevel, history, userM
         if (hoursSince < 1) return false;
     }
     
-    // ENDING_LEVEL: 2なら無条件で提案
-    if (endingLevel >= 2) return true;
+    // AI応答内の終了サイン
+    const responseEndingSigns = [
+        'また何かあれば', 'また気軽に', 'またお話し', 'いつでもお待ち',
+        'また相談', 'またお参り', 'お待ちして'
+    ];
     
-    // ENDING_LEVEL: 1の場合はAIで継続意図をチェック
-    if (endingLevel >= 1) {
-        const hasContinuation = await checkContinuationIntent(userMessage);
-        return !hasContinuation; // 継続意図がない場合のみ提案
-    }
+    // ユーザーメッセージの終了サイン
+    const userEndingSigns = [
+        'ありがとう', 'ありがとございます', '助かりました', '助かった',
+        'スッキリ', 'すっきり', '楽になった', '参考になりました'
+    ];
     
-    return false;
+    const hasResponseEndingSign = responseEndingSigns.some(sign => aiResponse.includes(sign));
+    const hasUserEndingSign = userEndingSigns.some(sign => userMessage.includes(sign));
+    
+    return hasResponseEndingSign || hasUserEndingSign;
 }
 
-// 継続意図をAIで判定する関数（新規追加）
-async function checkContinuationIntent(userMessage) {
-    try {
-        const messages = [
-            {
-                role: 'system',
-                content: `ユーザーのメッセージを分析して、会話を続ける意図があるかを判定してください。
 
-【判定基準】
-- 質問がある場合: YES
-- アドバイスや追加情報を求めている場合: YES  
-- 感謝のみで話を終えようとしている場合: NO
-
-最後に必ず以下の形式で記載してください：
-[CONTINUATION: YES] または [CONTINUATION: NO]`
-            },
-            {
-                role: 'user', 
-                content: userMessage
-            }
-        ];
-        
-        const response = await openai.chat.completions.create({
-            model: 'gpt-4o-mini',
-            messages: messages,
-            max_tokens: 100,
-            temperature: 0.3,
-        });
-        
-        const result = response.choices[0].message.content;
-        const match = result.match(/\[CONTINUATION:\s*(YES|NO)\]/);
-        const hasContinuation = match ? match[1] === 'YES' : false;
-        
-        console.log(`継続意図判定: ${hasContinuation ? 'YES' : 'NO'} - "${userMessage}"`);
-        return hasContinuation;
-        
-    } catch (error) {
-        console.error('継続意図判定エラー:', error.message);
-        return true; // エラー時は安全側に倒してお焚き上げしない
-    }
-}
 
 // お焚き上げ実行判定（キーワードベース）
 function shouldExecutePurificationByKeyword(message) {
@@ -579,9 +524,6 @@ async function generateAIResponseWithEndingAnalysis(message, history, userId, cl
         
         let aiResponse = response.choices[0].message.content;
         
-        const endingLevel = extractEndingLevel(aiResponse);
-        aiResponse = removeEndingLevelFromResponse(aiResponse);
-        
         if (aiResponse && !aiResponse.match(/[。！？にゃ]$/)) {
             const sentences = aiResponse.split(/[。！？]/);
             if (sentences.length > 1) {
@@ -591,9 +533,7 @@ async function generateAIResponseWithEndingAnalysis(message, history, userId, cl
         }
         
         const finalResponse = addCatSuffix(aiResponse);
-        
-        console.log(`AI応答生成完了: 終了度=${endingLevel}, レスポンス長=${finalResponse.length}文字`);
-        
+                
         return {
             response: finalResponse,
             endingLevel: endingLevel
@@ -777,13 +717,13 @@ async function handleEvent(event) {
         
         console.log(`会話終了度: ${endingLevel} (0=継続中, 1=やや終了, 2=明確な終了)`);
         
-        let finalResponse = aiResponse;
-        if (await shouldSuggestPurificationByAI(userId, endingLevel, history)) {
-            console.log('🔥 AI終了度判定でお焚き上げ提案');
-            finalResponse = aiResponse + "\n\n" + getPurificationSuggestion(userName, useNameInResponse);
-        } else if (shouldSuggestAnkete(userId, history, userMessage)) {
-            finalResponse = aiResponse + "\n\n" + getAnketeSuggestion(userName, useNameInResponse);
-        }        
+       let finalResponse = aiResponse;
+      if (shouldSuggestPurificationFromResponse(aiResponse, userMessage, userId, history)) {
+          console.log('🔥 応答分析でお焚き上げ提案');
+          finalResponse = aiResponse + "\n\n" + getPurificationSuggestion(userName, useNameInResponse);
+      } else if (shouldSuggestAnkete(userId, history, userMessage)) {
+          finalResponse = aiResponse + "\n\n" + getAnketeSuggestion(userName, useNameInResponse);
+      }
         
         const usageCount = updateDailyUsage(userId);
         const remaining = LIMITS.DAILY_TURN_LIMIT - usageCount;
