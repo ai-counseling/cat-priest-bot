@@ -1,4 +1,3 @@
-// 猫神主Bot「つきみ」- v1.2.0 Priority 1修正版
 // 猫神主Bot「つきみ」- v1.2.1 致命的バグ修正版
 require('dotenv').config();
 const express = require('express');
@@ -1207,9 +1206,8 @@ app.post('/admin/cleanup', express.json(), (req, res) => {
 // テストエンドポイント
 app.get('/test', (req, res) => {
     res.json({
-        message: 'つきみv1.2.1は致命的バグを修正して元気ですにゃ！',
-        timestamp: new Date().toISOString(),
-        version: '1.2.1',
+        message: 'つきみv1.2.2はキーワード方式で確実実行できるようになりましたにゃ！',
+        version: '1.2.2',
         webhook_url: req.get('host') + '/webhook',
         environment_check: {
             line_secret: !!process.env.LINE_CHANNEL_SECRET,
@@ -1252,7 +1250,6 @@ app.listen(PORT, () => {
     console.log('');
     console.log('つきみがv1.2.1で神社でお待ちしていますにゃ... 🐾');
 
-    
     // 起動時の環境変数チェック
     const requiredEnvs = ['LINE_CHANNEL_SECRET', 'LINE_CHANNEL_ACCESS_TOKEN', 'OPENAI_API_KEY'];
     const missingEnvs = requiredEnvs.filter(env => !process.env[env]);
