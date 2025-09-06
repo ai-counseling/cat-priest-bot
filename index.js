@@ -548,9 +548,9 @@ async function generateAIResponse(message, history, userId, client) {
 const SYSTEM_MESSAGES = {
     welcome: (userName, useNameInResponse) => {
         const greetings = [
-            `${userName ? userName + 'さん、' : ''}今日はどんなことでお悩みでしょうか？🐱 お気軽にお話しくださいにゃ🐾`,
-            `${userName ? userName + 'さん、' : ''}こんにちは😸 何かお困りのことがあるんですね？💝`,
-            `${userName ? userName + 'さん、' : ''}お疲れさまです🐱 今日はどのようなことでお話ししましょうか？✨`
+            `${userName ? userName + 'さん、' : ''}今日はどうされましたか？🐱 お気軽にお話しくださいにゃ🐾`,
+            `${userName ? userName + 'さん、' : ''}こんにちは😸 何かお困りのことがありますか？💝`,
+            `${userName ? userName + 'さん、' : ''}お疲れさまです🐱 今日はどのようなことをお話ししましょうか？✨`
         ];
         return greetings[Math.floor(Math.random() * greetings.length)];
     },
