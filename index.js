@@ -217,6 +217,27 @@ function removeEndingLevelFromResponse(aiResponse) {
 }
 
 // AI終了度判定によるお焚き上げ提案
+async function shouldSuggestPurificationByAI(userId, endingLevel, history, userMessage) {
+    if (history.length < 3) return false;
+    
+    const lastPurification = purificationHistory.get(userId);
+    if (lastPurification) {
+        const hoursSince = (Date.now() - lastPurification) / (1000 * 60 * 60);
+        if (hoursSince < 1) return false;
+    }
+    
+    // ENDING_LEVEL: 2なら無条件で提案
+    if (endingLevel >= 2) return true;
+    
+    // ENDING_LEVEL: 1の場合はAIで継続意図をチェック
+    if (endingLevel >= 1) {
+        const hasContinuation = await checkContinuationIntent(userMessage);
+        return !hasContinuation; // 継続意図がない場合のみ提案
+    }
+    
+    return false;
+}
+
 // 継続意図をAIで判定する関数（新規追加）
 async function checkContinuationIntent(userMessage) {
     try {
