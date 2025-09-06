@@ -548,8 +548,8 @@ async function generateAIResponse(message, history, userId, client) {
 const SYSTEM_MESSAGES = {
     welcome: (userName, useNameInResponse) => {
         const greetings = [
-            `${userName ? userName + 'さん、' : ''}今日はどうされましたか？🐱 お気軽にお話しくださいにゃ🐾`,
-            `${userName ? userName + 'さん、' : ''}こんにちは😸 何かお困りのことがありますか？💝`,
+            `${userName ? userName + 'さん、' : ''}今日はどんなことでお悩みでしょうか？🐱 お気軽にお話しくださいにゃ🐾`,
+            `${userName ? userName + 'さん、' : ''}こんにちは😸 何かお困りのことがあるんですね？💝`,
             `${userName ? userName + 'さん、' : ''}お疲れさまです🐱 今日はどのようなことでお話ししましょうか？✨`
         ];
         return greetings[Math.floor(Math.random() * greetings.length)];
@@ -1214,11 +1214,11 @@ app.get('/test', (req, res) => {
             line_token: !!process.env.LINE_CHANNEL_ACCESS_TOKEN,
             openai_key: !!process.env.OPENAI_API_KEY
         },
-        critical_fixes_completed: [
-            'お焚き上げ提案: 「なるほど」等の誤判定を修正',
-            'お焚き上げ同意: 「お願い」単体検出に対応',
-            'アンケート提案: 10分→30分に検出時間延長',
-            '日次制限: dailyUsage誤削除を完全修正'
+        ai_ending_detection_completed: [
+            'AIによる柔軟な会話終了判定システム実装',
+            '「一旦大丈夫」「また今度」等の自然な終了表現も捕捉',
+            'キーワード依存から文脈理解への進化',
+            'アドバイス表現をより優しく調整'
         ]
     });
 });
@@ -1249,6 +1249,8 @@ app.listen(PORT, () => {
     console.log('========================');
     console.log('');
     console.log('つきみがv1.2.1で神社でお待ちしていますにゃ... 🐾');
+    
+           
 
     // 起動時の環境変数チェック
     const requiredEnvs = ['LINE_CHANNEL_SECRET', 'LINE_CHANNEL_ACCESS_TOKEN', 'OPENAI_API_KEY'];
