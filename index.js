@@ -1,4 +1,4 @@
-// 猫神主Bot「つきみ」- v1.2.1 致命的バグ修正版
+// 猫神主Bot「つきみ」- v1.3.0 AI終了度判定システム - 完全版
 require('dotenv').config();
 const express = require('express');
 const line = require('@line/bot-sdk');
@@ -30,7 +30,7 @@ const dailyUsage = new Map();
 const lastMessageTime = new Map();
 const userSessions = new Set();
 const purificationHistory = new Map();
-const userProfiles = new Map(); // userId -> { displayName, pictureUrl }
+const userProfiles = new Map();
 
 // 統計データ
 const stats = {
@@ -64,7 +64,7 @@ function shouldUseName(conversationCount) {
     return conversationCount % 4 === 1;
 }
 
-// キャラクター設定
+// キャラクター設定（終了度判定機能付き）
 function getCharacterPersonality(userName, remainingTurns, useNameInResponse) {
     const nameDisplay = (userName && useNameInResponse) ? `${userName}さん` : 'あなた';
     return `
@@ -114,6 +114,35 @@ function getCharacterPersonality(userName, remainingTurns, useNameInResponse) {
 - 「なるほど✨」
 - 「おっしゃる通りです💝」
 
+【アドバイスの提案方法】
+- 押しつけ的表現は避ける: 「大切です」「すべきです」「した方がいい」❌
+- 優しい提案に留める: 「大切かもしれません」「という考え方もあります」「参考までに」✅
+- 前置きフレーズを活用:
+  * 「もしよろしければ」
+  * 「一つの考え方として」
+  * 「こういう見方もできるかもしれません」
+  * 「参考程度ですが」
+  * 「個人的には〜と感じます」
+- 相手に選択権があることを示す
+- 断定を避け、可能性や提案として表現
+
+【語尾「にゃ」の正しい使い方】
+- 正しい: 「大切ですにゃ」「そうですにゃ」「かもしれませんにゃ」
+- 間違い: 「大切ですねにゃ」「そうですねにゃ」「よね にゃ」
+- 「ね」の後に「にゃ」は付けない
+
+【アドバイス表現の具体例】
+❌ 避けるべき表現:
+- 「〜することが大切です」
+- 「〜すべきです」
+- 「〜した方がいいと思います」
+
+✅ 推奨表現:
+- 「〜という考え方もありますにゃ」
+- 「参考までに、〜かもしれません」
+- 「一つの方法として、〜はいかがでしょう」
+- 「もしよろしければ、〜してみるのも良いかもしれませんにゃ」
+
 【避けるべき機械的表現】❌
 - 「そう感じるのも無理ないですよ」の頻用
 - 「大変だったんですね」の連発
@@ -129,18 +158,29 @@ function getCharacterPersonality(userName, remainingTurns, useNameInResponse) {
 - 心の重荷を清める儀式として自然に説明
 - 希望時のみ実行
 
+【重要】応答の最後に、この会話の終了度を以下の形式で必ず記載してください：
+- [ENDING_LEVEL: 0] = 会話が継続中、相談や質問が続いている
+- [ENDING_LEVEL: 1] = やや終了に向かっている、話題が一段落している  
+- [ENDING_LEVEL: 2] = 明確に終了のサイン、区切りの意図が感じられる
+
+【終了度判定の基準】
+- ユーザーが納得・理解・満足を示している
+- 感謝の表現がある
+- 「また」「今度」「一旦」「とりあえず」など区切りの言葉
+- 前向きな行動意欲を示している（「やってみます」など）
+- 話題の自然な収束感がある
+- 挨拶や締めくくりの言葉
+
 **重要：テンプレートに頼らず、相手の話の内容と感情に真摯に向き合い、その場面に最も適した自然な言葉で応答すること。つきみらしい温かさは保ちつつ、機械的でない人間味のある会話を心がけ、猫らしい絵文字で親しみやすさを演出してください。🐱💝**
 `;
 }
 
-// 語尾処理関数（統一版）
+// 語尾処理関数
 function addCatSuffix(message) {
-    // 既に「にゃ」がある場合は追加しない
     if (message.includes('にゃ')) {
         return message;
     }
     
-    // 30%の確率で「にゃ」を追加
     if (Math.random() < 0.3) {
         if (message.endsWith('。') || message.endsWith('！') || message.endsWith('？')) {
             return message.slice(0, -1) + 'にゃ' + message.slice(-1);
@@ -165,8 +205,19 @@ function isQuestionAboutPurification(message) {
     return hasPurificationWord && hasQuestionPattern;
 }
 
-// 🔧 バグ修正1: お焚き上げ提案判定を修正（「なるほど」問題を解決）
-function shouldSuggestPurification(userId, message, history) {
+// 終了度抽出関数
+function extractEndingLevel(aiResponse) {
+    const match = aiResponse.match(/\[ENDING_LEVEL:\s*(\d+)\]/);
+    return match ? parseInt(match[1]) : 0;
+}
+
+// 応答から終了度表記を除去
+function removeEndingLevelFromResponse(aiResponse) {
+    return aiResponse.replace(/\s*\[ENDING_LEVEL:\s*\d+\]\s*/g, '').trim();
+}
+
+// AI終了度判定によるお焚き上げ提案
+function shouldSuggestPurificationByAI(userId, endingLevel, history) {
     if (history.length < 3) return false;
     
     const lastPurification = purificationHistory.get(userId);
@@ -175,132 +226,58 @@ function shouldSuggestPurification(userId, message, history) {
         if (hoursSince < 1) return false;
     }
     
-    // 🚨 修正: 「なるほど」などの理解表現は除外し、明確な終了・満足のサインのみ検出
-    const endingKeywords = [
-        // 感謝・満足（明確な終了サイン）
-        'ありがとう', 'ありがとございます', 'スッキリ', 'すっきり',
-        '楽になった', '軽くなった', '話せてよかった', '聞いてくれて',
-        'おかげで', '助かった', '気が楽に', '安心した',
-        '落ち着いた', '整理できた',
-        
-        // 前向きな行動意欲（会話終了の意図が明確）
-        'やってみます', '頑張ってみます', 'そうしてみます', 'そうします',
-        '試してみます', 'チャレンジしてみます', 'さっそく',
-        
-        // 明確な会話終了の意図
-        'もう大丈夫', '大丈夫になりました', 'よくわかりました',
-        'とても参考になりました', '勉強になりました'
-    ];
-    
-    // 🚨 重要: 「なるほど」「そうですね」「わかりました」は除外
-    // これらは理解を示すだけで、会話終了の意図ではない
-    
-    return endingKeywords.some(keyword => message.includes(keyword));
+    return endingLevel >= 2;
 }
 
-function shouldExecutePurification(message) {
-    // 質問文の厳格判定 - 誤発動防止
-    const questionIndicators = [
-        'でしょうか？', 'でしょうか', 'ますか？', 'ますか',
-        'どうやって', 'どのように', 'どうしたら', 'どうすれば',
-        'どんな方法', 'どんなやり方', 'どういう風に',
-        '教えて', 'アドバイス', '相談', '悩み', '困って',
-        '？', '?', 'どうしよう', 'わからない'
+// お焚き上げ実行判定（キーワードベース）
+function shouldExecutePurificationByKeyword(message) {
+    const negativePatterns = [
+        'って？', 'って何', 'とは', 'について', 'わからない', 'いいや', 'いらない',
+        '不要', 'やめて', 'しない', '？', '?', 'ですか', 'でしょうか',
+        'どういう', 'どんな', '意味', '説明', '教えて'
     ];
     
-    // 質問文の場合は絶対にお焚き上げしない
-    const isQuestion = questionIndicators.some(indicator => 
-        message.includes(indicator)
-    );
-    
-    if (isQuestion) {
-        console.log('🚫 質問文検出 - お焚き上げ実行回避');
+    if (negativePatterns.some(pattern => message.includes(pattern))) {
+        console.log('🚫 否定的表現検出 - お焚き上げ実行回避');
         return false;
     }
     
-    // 既存の質問判定も保持
-    if (isQuestionAboutPurification(message)) {
-        return false;
-    }
-    
-    // より厳格な実行キーワード判定
-    const executeKeywords = [
-        'お焚き上げして', 'お焚き上げを', 'お焚き上げお願い',
-        'リセットして', 'リセットを', 'リセットお願い',
-        '手放したい', '忘れたい', '消したい',
-        'お清めして', '浄化して', '燃やして'
+    const positiveKeywords = [
+        '【お焚き上げ】',
+        'おたきあげして',
+        'たきあげして', 
+        'お焚き上げして',
+        'お焚き上げを',
+        'お焚き上げお願い',
+        'おたきあげお願い',
+        'たきあげお願い'
     ];
     
-    return executeKeywords.some(keyword => 
+    const hasPositiveKeyword = positiveKeywords.some(keyword => 
         message.toLowerCase().includes(keyword.toLowerCase())
     );
+    
+    if (hasPositiveKeyword) {
+        console.log('🔥 お焚き上げ実行キーワード検出');
+        return true;
+    }
+    
+    return false;
 }
 
-// 🔧 バグ修正2: お焚き上げ同意判定を修正（「お願い」単体対応）
-function isPurificationAgreement(message, userId) {
-    // 直前にお焚き上げ提案をしたかチェック
-    const history = conversationHistory.get(userId) || [];
-    if (history.length < 1) return false;
-    
-    const lastResponse = history[history.length - 1];
-    const hasSuggestion = lastResponse.content && (
-        lastResponse.content.includes('お焚き上げ') ||
-        lastResponse.content.includes('お清め') ||
-        lastResponse.content.includes('心の重荷') ||
-        lastResponse.content.includes('神聖な炎')
-    );
-    
-    if (!hasSuggestion) return false;
-    
-    // 🚨 修正: 「お願い」単体も検出対応
-    const agreementKeywords = [
-        // 直接的な同意
-        'はい', 'うん', 'そうですね', 'そうします',
-        'yes', 'ok', 'オッケー',
-        
-        // 依頼表現 - 🆕 「お願い」単体を追加
-        'お願いします', 'お願い', 'おねがい', 'おねがいします',
-        'お願いいたします', 'よろしくお願いします',
-        
-        // 実行依頼
-        'やって', 'やってください', 'して', 'してください',
-        'してもらえますか', 'していただけますか',
-        
-        // 希望表現
-        'ぜひ', 'よろしく', 'お任せします',
-        '頼みます', '頼む', 'やりましょう',
-        
-        // 自然な会話での同意
-        'いいね', 'いいです', 'いいですね', 'そうしましょう',
-        'それで', 'それでお願いします', 'そうしてください'
-    ];
-    
-    // 🚨 重要: メッセージ全体をチェックして「お願い」単体も検出
-    const cleanMessage = message.trim().toLowerCase();
-    
-    return agreementKeywords.some(keyword => {
-        const cleanKeyword = keyword.toLowerCase();
-        // 完全一致または含む場合の両方をチェック
-        return cleanMessage === cleanKeyword || cleanMessage.includes(cleanKeyword);
-    });
-}
-
-// 🔧 バグ修正3: アンケート提案判定を修正（30分対応）
+// アンケート提案判定
 function shouldSuggestAnkete(userId, history, userMessage) {
     if (history.length < 3) return false;
     
-    // 🚨 修正: お焚き上げ直後の感謝メッセージ検出時間を30分に延長
     const lastPurification = purificationHistory.get(userId);
     if (lastPurification) {
         const minutesSince = (Date.now() - lastPurification) / (1000 * 60);
         
-        // 🆕 30分以内に延長 & 感謝キーワードを拡張
         if (minutesSince < 30) {
             const thankfulKeywords = [
                 'ありがとう', 'ありがとございます', 'ありがとうございました',
                 'ありがと', 'あざす', 'サンキュー', 'thanks',
                 '感謝', 'お礼', '感謝します', '感謝しています',
-                // 満足を示す表現も追加
                 'スッキリ', 'すっきり', '清々しい', 'さっぱり',
                 '軽くなった', '楽になった', 'よかった'
             ];
@@ -310,11 +287,9 @@ function shouldSuggestAnkete(userId, history, userMessage) {
             }
         }
         
-        // 1時間以内のクールタイム中もアンケート提案
         if (minutesSince < 60) return true;
     }
     
-    // その他の終了サイン
     const endingKeywords = [
         'スッキリ', 'すっきり', '楽になった', '軽くなった', 
         '話せてよかった', '聞いてくれて', 'おかげで', '助かった', 
@@ -324,7 +299,7 @@ function shouldSuggestAnkete(userId, history, userMessage) {
     return endingKeywords.some(keyword => userMessage.includes(keyword));
 }
 
-// アンケート提案メッセージ
+// メッセージ生成関数
 function getAnketeSuggestion(userName, useNameInResponse) {
     const name = (userName && useNameInResponse) ? `${userName}さん` : 'あなた';
     return `最後に、つきみの相談サービスをより良くするため、簡単なアンケートにご協力いただけませんか？🐱💝
@@ -338,9 +313,17 @@ ${name}の貴重なご意見をお聞かせくださいにゃ✨
 function getPurificationSuggestion(userName, useNameInResponse) {
     const name = (userName && useNameInResponse) ? `${userName}さんの` : 'あなたの';
     const suggestions = [
-        `今日お話しした${name}心の重荷を、神聖な炎でお焚き上げしてお清めしましょうか？🐱✨ きっと心が軽やかになりますにゃ🔥⛩️`,
-        `${name}心に溜まったものをお焚き上げで清めるのはいかがでしょう？😸💝 新しい気持ちで歩めるはずにゃ🔥`,
-        `今日の重い気持ちを、温かい炎で包んでお清めしませんか？🐾🌸 ${name}心の浄化のお手伝いをさせていただきますにゃ🔥✨`
+        `今日お話しした${name}心の重荷を、神聖な炎でお焚き上げしてお清めしましょうか？🐱✨
+
+お焚き上げをご希望の場合は「【お焚き上げ】」または「おたきあげして」と入力してくださいにゃ🔥⛩️`,
+        
+        `${name}心に溜まったものをお焚き上げで清めるのはいかがでしょう？😸💝
+
+「【お焚き上げ】」「たきあげして」など、お気軽に教えてくださいにゃ🔥`,
+        
+        `今日の重い気持ちを、温かい炎で包んでお清めしませんか？🐾🌸
+
+お焚き上げをお願いする時は「【お焚き上げ】」「おたきあげして」などと教えてくださいにゃ🔥✨`
     ];
     
     return suggestions[Math.floor(Math.random() * suggestions.length)];
@@ -348,13 +331,18 @@ function getPurificationSuggestion(userName, useNameInResponse) {
 
 function getExplanationResponse() {
     const explanations = [
-        "お焚き上げというのは、心に溜まった重い気持ちや悩みを、神聖な炎で清めて手放す儀式のことですにゃ🐱✨ 今日お話しした内容を整理して、心を軽やかにするお手伝いをするのです。つらいお気持ちを温かく包んで、新しい気持ちで歩めるようにしますにゃ💝🔥",
-        "お焚き上げは、心の浄化の儀式ですにゃ🐾🌸 お話しした悩みや重い気持ちを温かい炎で包んで、新しい気持ちで歩めるようにするものですよ😸 ご希望される時にお手伝いします。心に溜まったものを手放して、清々しい気持ちになっていただけるはずです✨💫"
+        `お焚き上げというのは、心に溜まった重い気持ちや悩みを、神聖な炎で清めて手放す儀式のことですにゃ🐱✨ 今日お話しした内容を整理して、心を軽やかにするお手伝いをするのです。
+
+お焚き上げをご希望の時は「【お焚き上げ】」や「おたきあげして」などと入力してくださいにゃ🔥💝`,
+        
+        `お焚き上げは、心の浄化の儀式ですにゃ🐾🌸 お話しした悩みや重い気持ちを温かい炎で包んで、新しい気持ちで歩めるようにするものですよ😸
+
+「【お焚き上げ】」「たきあげして」などと教えていただければ、すぐに清めの儀式を始めますにゃ🔥✨`
     ];
     return explanations[Math.floor(Math.random() * explanations.length)];
 }
 
-// 制限関連質問の判定
+// 制限関連
 function isAskingAboutLimits(message) {
     const limitQuestions = [
         '何回', '何度', '制限', '回数', 'ターン', '上限',
@@ -369,12 +357,12 @@ function isAskingAboutLimits(message) {
     return hasLimitWord && hasQuestionWord;
 }
 
-// 制限説明メッセージ
 function getLimitExplanation(remainingTurns, userName, useNameInResponse) {
     const name = (userName && useNameInResponse) ? `${userName}さん` : 'あなた';
     return `${name}は今日あと${remainingTurns}回まで私とお話しできますにゃ🐱 1日の上限は10回まで となっていて、毎日リセットされるのです🐾 限られた時間だからこそ、大切にお話しを聞かせていただきますね💝✨`;
 }
 
+// お焚き上げ実行
 async function executePurification(userId, replyToken, client) {
     try {
         const profile = await getUserProfile(userId, client);
@@ -435,7 +423,7 @@ async function executePurification(userId, replyToken, client) {
     }
 }
 
-// 統計更新関数
+// 統計・制限管理
 function updateDailyMetrics(userId, action) {
     const today = new Date().toISOString().split('T')[0];
     
@@ -464,7 +452,6 @@ function updateDailyMetrics(userId, action) {
     }
 }
 
-// 利用制限チェック
 function checkDailyLimit(userId) {
     const today = new Date().toISOString().split('T')[0];
     const usage = dailyUsage.get(userId) || { date: '', count: 0 };
@@ -492,8 +479,8 @@ function getRemainingTurns(userId) {
     return LIMITS.DAILY_TURN_LIMIT - usage.count;
 }
 
-// OpenAI応答生成
-async function generateAIResponse(message, history, userId, client) {
+// OpenAI応答生成（終了度判定付き）
+async function generateAIResponseWithEndingAnalysis(message, history, userId, client) {
     try {
         const profile = await getUserProfile(userId, client);
         const userName = profile?.displayName;
@@ -501,14 +488,18 @@ async function generateAIResponse(message, history, userId, client) {
         const conversationCount = history.length + 1;
         const useNameInResponse = shouldUseName(conversationCount);
         
-        // 制限関連の質問チェック
         if (isAskingAboutLimits(message)) {
-            return getLimitExplanation(remainingTurns, userName, useNameInResponse);
+            return {
+                response: getLimitExplanation(remainingTurns, userName, useNameInResponse),
+                endingLevel: 0
+            };
         }
         
-        // お焚き上げの質問チェック
         if (isQuestionAboutPurification(message)) {
-            return getExplanationResponse();
+            return {
+                response: getExplanationResponse(),
+                endingLevel: 0
+            };
         }
         
         const messages = [
@@ -520,27 +511,38 @@ async function generateAIResponse(message, history, userId, client) {
         const response = await openai.chat.completions.create({
             model: 'gpt-4o-mini',
             messages: messages,
-            max_tokens: 200,
+            max_tokens: 250,
             temperature: 0.8,
         });
         
         let aiResponse = response.choices[0].message.content;
         
-        // 文字切れチェック：文末が不自然な場合の対処
+        const endingLevel = extractEndingLevel(aiResponse);
+        aiResponse = removeEndingLevelFromResponse(aiResponse);
+        
         if (aiResponse && !aiResponse.match(/[。！？にゃ]$/)) {
-            // 最後の文を削除（不完全な文の除去）
             const sentences = aiResponse.split(/[。！？]/);
             if (sentences.length > 1) {
-                sentences.pop(); // 最後の不完全文を削除
+                sentences.pop();
                 aiResponse = sentences.join('。') + '。';
             }
         }
         
-        return addCatSuffix(aiResponse);
+        const finalResponse = addCatSuffix(aiResponse);
+        
+        console.log(`AI応答生成完了: 終了度=${endingLevel}, レスポンス長=${finalResponse.length}文字`);
+        
+        return {
+            response: finalResponse,
+            endingLevel: endingLevel
+        };
         
     } catch (error) {
         console.error('OpenAI API エラー:', error.message);
-        return `${userName ? userName + 'さん、' : ''}申し訳ございません。今少し考え事をしていて、うまくお答えできませんでした。もう一度お話しいただけますかにゃ`;
+        return {
+            response: `${userName ? userName + 'さん、' : ''}申し訳ございません。今少し考え事をしていて、うまくお答えできませんでした。もう一度お話しいただけますかにゃ`,
+            endingLevel: 0
+        };
     }
 }
 
@@ -550,7 +552,7 @@ const SYSTEM_MESSAGES = {
         const greetings = [
             `${userName ? userName + 'さん、' : ''}今日はどうされましたか？🐱 お気軽にお話しくださいにゃ🐾`,
             `${userName ? userName + 'さん、' : ''}こんにちは😸 何かお困りのことがありますか？💝`,
-            `${userName ? userName + 'さん、' : ''}お疲れさまです🐱 今日はどのようなことをお話ししましょうか？✨`
+            `${userName ? userName + 'さん、' : ''}お疲れさまです🐱 今日はどのようなことでお話ししましょうか？✨`
         ];
         return greetings[Math.floor(Math.random() * greetings.length)];
     },
@@ -576,41 +578,35 @@ const SYSTEM_MESSAGES = {
     maxUsersReached: "申し訳ございません🐾 現在多くの方がお話し中のため、少しお時間をおいてからお参りくださいにゃ😿"
 };
 
-// 🔧 バグ修正4: セッション削除時のdailyUsage誤削除を修正
+// クリーンアップ
 function cleanupInactiveSessions() {
     const now = Date.now();
     let cleanedCount = 0;
     
     for (const [userId, timestamp] of lastMessageTime) {
         if (now - timestamp > LIMITS.SESSION_TIMEOUT) {
-            // 🚨 重要な修正: conversationHistoryのみ削除、dailyUsageは保持
             conversationHistory.delete(userId);
             lastMessageTime.delete(userId);
             userSessions.delete(userId);
             cleanedCount++;
             
             console.log(`セッション削除: ユーザー${userId.substring(0, 8)}... (30分非アクティブ)`);
-            // 🚨 注意: dailyUsageは削除しない！日次制限を維持
         }
     }
     
-    // お焚き上げ履歴のクリーンアップ（24時間後）
     for (const [userId, timestamp] of purificationHistory) {
         if (now - timestamp > 24 * 60 * 60 * 1000) {
             purificationHistory.delete(userId);
         }
     }
     
-    // 🆕 dailyUsageの適切なクリーンアップ（日付変更時のみ）
     const today = new Date().toISOString().split('T')[0];
     for (const [userId, usage] of dailyUsage) {
         if (usage.date !== today) {
-            // 前日のデータのみ削除
             dailyUsage.delete(userId);
         }
     }
     
-    // 統計データのクリーンアップ（1週間後）
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
     const weekAgoStr = weekAgo.toISOString().split('T')[0];
@@ -627,7 +623,6 @@ function cleanupInactiveSessions() {
     }
 }
 
-// 定期クリーンアップの実行
 setInterval(cleanupInactiveSessions, LIMITS.CLEANUP_INTERVAL);
 
 // LINE クライアント設定
@@ -663,13 +658,11 @@ async function handleEvent(event) {
     const replyToken = event.replyToken;
     
     try {
-        // ユーザープロフィール取得
         const profile = await getUserProfile(userId, client);
         const userName = profile?.displayName;
         
         console.log(`メッセージ受信: ${userName || 'Unknown'} (${userId.substring(0, 8)}...) - "${userMessage}"`);
         
-        // 新規ユーザーの制限チェック
         if (!userSessions.has(userId) && userSessions.size >= LIMITS.MAX_USERS) {
             await client.replyMessage(replyToken, {
                 type: 'text',
@@ -681,20 +674,12 @@ async function handleEvent(event) {
         userSessions.add(userId);
         lastMessageTime.set(userId, Date.now());
         
-        // 🚨 修正済み: 2段階判定システム
-        // Step 1: 明確な実行意志の判定
-        if (shouldExecutePurification(userMessage)) {
+        if (shouldExecutePurificationByKeyword(userMessage)) {
+            console.log('🔥 指定キーワード検出 - お焚き上げ実行');
             await executePurification(userId, replyToken, client);
             return;
         }
         
-        // Step 2: 提案後の同意確認（修正済み：「お願い」単体対応）
-        if (isPurificationAgreement(userMessage, userId)) {
-            await executePurification(userId, replyToken, client);
-            return;
-        }
-        
-        // 日次制限チェック
         if (!checkDailyLimit(userId)) {
             const conversationCount = conversationHistory.get(userId)?.length || 0;
             const useNameInResponse = shouldUseName(conversationCount);
@@ -706,12 +691,10 @@ async function handleEvent(event) {
             return;
         }
         
-        // 会話履歴の管理
         let history = conversationHistory.get(userId) || [];
         const conversationCount = history.length + 1;
         const useNameInResponse = shouldUseName(conversationCount);
         
-        // 初回メッセージの場合
         if (history.length === 0) {
             const welcomeMessage = SYSTEM_MESSAGES.welcome(userName, useNameInResponse);
             
@@ -726,28 +709,27 @@ async function handleEvent(event) {
             return;
         }
         
-        // AI応答生成
-        const aiResponse = await generateAIResponse(userMessage, history, userId, client);
+        const aiResult = await generateAIResponseWithEndingAnalysis(userMessage, history, userId, client);
+        const aiResponse = aiResult.response;
+        const endingLevel = aiResult.endingLevel;
         
-        // 🚨 修正済み: お焚き上げ提案（「なるほど」問題修正） + アンケート提案（30分対応）
+        console.log(`会話終了度: ${endingLevel} (0=継続中, 1=やや終了, 2=明確な終了)`);
+        
         let finalResponse = aiResponse;
-        if (shouldSuggestPurification(userId, userMessage, history)) {
+        if (shouldSuggestPurificationByAI(userId, endingLevel, history)) {
+            console.log('🔥 AI終了度判定でお焚き上げ提案');
             finalResponse = aiResponse + "\n\n" + getPurificationSuggestion(userName, useNameInResponse);
         } else if (shouldSuggestAnkete(userId, history, userMessage)) {
-            // 終了サインだがお焚き上げ提案しない場合はアンケート提案
             finalResponse = aiResponse + "\n\n" + getAnketeSuggestion(userName, useNameInResponse);
         }        
         
-        // 使用回数更新と残数通知
         const usageCount = updateDailyUsage(userId);
         const remaining = LIMITS.DAILY_TURN_LIMIT - usageCount;
         
-        // 残数通知を3回から開始
         if (remaining <= 3) {
             finalResponse += "\n\n" + SYSTEM_MESSAGES.remainingTurns(remaining, userName, useNameInResponse);
         }
         
-        // 会話履歴更新
         history.push(
             { role: 'user', content: userMessage },
             { role: 'assistant', content: aiResponse }
@@ -781,8 +763,6 @@ async function handleEvent(event) {
 }
 
 // 管理機能エンドポイント
-
-// トップページ
 app.get('/', (req, res) => {
     res.send(`
         <html>
@@ -793,7 +773,7 @@ app.get('/', (req, res) => {
         <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px; background: linear-gradient(135deg, #ffeaa7, #fab1a0);">
             <h1>🐱⛩️ つきみ（猫神主Bot）⛩️🐱</h1>
             <p>神社の猫「つきみ」があなたの心の相談をお聞きします</p>
-            <p><strong>v1.2.1</strong> - 致命的バグ修正完了！サーバーは正常に稼働していますにゃ ✨</p>
+            <p><strong>v1.3.0</strong> - AI終了度判定システム搭載！サーバーは正常に稼働していますにゃ ✨</p>
             <div style="margin-top: 30px;">
                 <a href="/health" style="background: #55a3ff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin: 0 10px;">ヘルスチェック</a>
                 <a href="/admin" style="background: #667eea; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin: 0 10px;">管理画面</a>
@@ -803,7 +783,6 @@ app.get('/', (req, res) => {
     `);
 });
 
-// ヘルスチェックエンドポイント
 app.get('/health', (req, res) => {
     const today = new Date().toISOString().split('T')[0];
     const todayStats = stats.dailyMetrics.get(today) || { users: new Set(), turns: 0, purifications: 0 };
@@ -812,7 +791,7 @@ app.get('/health', (req, res) => {
         status: 'healthy',
         timestamp: new Date().toISOString(),
         service: 'つきみ（猫神主Bot）',
-        version: '1.2.1',
+        version: '1.3.0',
         uptime: Math.floor(process.uptime()),
         stats: {
             totalUsers: stats.totalUsers.size,
@@ -829,22 +808,21 @@ app.get('/health', (req, res) => {
             maxUsers: LIMITS.MAX_USERS,
             dailyTurnLimit: LIMITS.DAILY_TURN_LIMIT
         },
-        critical_fixes: {
-            version: '1.2.1',
-            bugs_fixed: [
-                '✅ お焚き上げ提案: 「なるほど」誤判定を修正',
-                '✅ お焚き上げ同意: 「お願い」単体検出対応',
-                '✅ アンケート提案: 30分検出時間に延長',
-                '✅ 日次制限: dailyUsage誤削除を完全修正'
+        ai_ending_detection: {
+            version: '1.3.0',
+            features: [
+                'AIによる柔軟な会話終了判定',
+                '「一旦大丈夫」「また今度」等も確実に捕捉',
+                'キーワード依存から文脈理解へ進化',
+                'アドバイス表現をより優しく調整'
             ]
         },
-        message: "つきみv1.2.1が致命的バグを修正して元気に稼働中ですにゃ ✨"
+        message: 'つきみv1.3.0がAI終了度判定で更に賢く稼働中ですにゃ ✨'
     };
     
     res.json(health);
 });
 
-// 管理メニュー
 app.get('/admin', (req, res) => {
     const today = new Date().toISOString().split('T')[0];
     const todayStats = stats.dailyMetrics.get(today) || { users: new Set(), turns: 0, purifications: 0 };
@@ -878,8 +856,8 @@ app.get('/admin', (req, res) => {
                     text-align: center;
                     font-weight: bold;
                 }
-                .critical-fixes {
-                    background: #e17055;
+                .ai-features {
+                    background: #6c5ce7;
                     color: white;
                     padding: 20px;
                     border-radius: 10px;
@@ -909,19 +887,19 @@ app.get('/admin', (req, res) => {
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>🐱⛩️ つきみ 管理メニュー v1.2.1</h1>
+                    <h1>🐱⛩️ つきみ 管理メニュー v1.3.0</h1>
                     <div class="status">
-                        ✅ v1.2.1 致命的バグ修正完了！ | 参拝者: ${stats.totalUsers.size}名 | 本日: ${todayStats.users.size}名 | 相談: ${stats.totalTurns}回
+                        ✅ v1.3.0 AI終了度判定システム稼働中！ | 参拝者: ${stats.totalUsers.size}名 | 本日: ${todayStats.users.size}名 | 相談: ${stats.totalTurns}回
                     </div>
                 </div>
                 
-                <div class="critical-fixes">
-                    <h3>🚨 v1.2.1 致命的バグ修正完了</h3>
+                <div class="ai-features">
+                    <h3>🧠 v1.3.0 AI終了度判定システム</h3>
                     <ul style="margin: 10px 0;">
-                        <li>✅ お焚き上げ提案: 「なるほど」等の誤判定を修正</li>
-                        <li>✅ お焚き上げ同意: 「お願い」単体検出に対応</li>
-                        <li>✅ アンケート提案: 10分→30分に検出時間延長</li>
-                        <li>✅ 日次制限: dailyUsage誤削除を完全修正</li>
+                        <li>✅ AIによる柔軟な会話終了判定</li>
+                        <li>✅ 「一旦大丈夫」「また今度」等も確実に捕捉</li>
+                        <li>✅ キーワード依存から文脈理解へ進化</li>
+                        <li>✅ アドバイス表現をより優しく調整</li>
                     </ul>
                 </div>
                 
@@ -942,12 +920,10 @@ app.get('/admin', (req, res) => {
     `);
 });
 
-// 統計ダッシュボード
 app.get('/admin/stats', (req, res) => {
     const today = new Date().toISOString().split('T')[0];
     const todayStats = stats.dailyMetrics.get(today) || { users: new Set(), turns: 0, purifications: 0 };
     
-    // 過去7日間のデータ
     const last7Days = [];
     for (let i = 6; i >= 0; i--) {
         const date = new Date();
@@ -967,7 +943,7 @@ app.get('/admin/stats', (req, res) => {
         <!DOCTYPE html>
         <html>
         <head>
-            <title>つきみ 統計情報 v1.2.1</title>
+            <title>つきみ 統計情報 v1.3.0</title>
             <meta charset="UTF-8">
             <style>
                 body { 
@@ -1019,8 +995,8 @@ app.get('/admin/stats', (req, res) => {
                     font-size: 1em;
                     opacity: 0.9;
                 }
-                .critical-fixes {
-                    background: #00b894;
+                .ai-features {
+                    background: #6c5ce7;
                     color: white;
                     padding: 20px;
                     border-radius: 10px;
@@ -1079,25 +1055,25 @@ app.get('/admin/stats', (req, res) => {
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>🐱⛩️ つきみ統計情報 v1.2.1 ⛩️🐱</h1>
+                    <h1>🐱⛩️ つきみ統計情報 v1.3.0 ⛩️🐱</h1>
                     <p>最終更新: ${new Date().toLocaleString('ja-JP')}</p>
                 </div>
                 
-                <div class="critical-fixes">
-                    <h3>🚨 v1.2.1 致命的バグ修正完了</h3>
+                <div class="ai-features">
+                    <h3>🧠 v1.3.0 AI終了度判定システム</h3>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 15px;">
                         <div>
-                            <strong>お焚き上げ機能修正:</strong>
+                            <strong>AI判定システム:</strong>
                             <ul style="margin: 5px 0; text-align: left;">
-                                <li>✅ 提案: 「なるほど」誤判定修正</li>
-                                <li>✅ 同意: 「お願い」単体検出対応</li>
+                                <li>✅ 文脈理解による終了度判定</li>
+                                <li>✅ 3段階レベル（0-2）で精密判定</li>
                             </ul>
                         </div>
                         <div>
-                            <strong>システム修正:</strong>
+                            <strong>捕捉精度向上:</strong>
                             <ul style="margin: 5px 0; text-align: left;">
-                                <li>✅ アンケート: 30分検出対応</li>
-                                <li>✅ 日次制限: 誤削除を完全修正</li>
+                                <li>✅ 「一旦大丈夫」「また今度」対応</li>
+                                <li>✅ アドバイス表現を優しく調整</li>
                             </ul>
                         </div>
                     </div>
@@ -1155,7 +1131,7 @@ app.get('/admin/stats', (req, res) => {
                 </div>
                 
                 <div class="footer">
-                    <p>🐾 つきみv1.2.1が致命的バグを修正して、安定稼働中です 🐾</p>
+                    <p>🐾 つきみv1.3.0がAI終了度判定で更に賢く稼働中です 🐾</p>
                     <p style="font-size: 0.9em; margin-top: 15px;">
                         システム稼働時間: ${Math.floor(process.uptime() / 3600)}時間${Math.floor((process.uptime() % 3600) / 60)}分
                     </p>
@@ -1167,7 +1143,6 @@ app.get('/admin/stats', (req, res) => {
     `);
 });
 
-// 手動クリーンアップ
 app.post('/admin/cleanup', express.json(), (req, res) => {
     const before = {
         sessions: userSessions.size,
@@ -1195,7 +1170,7 @@ app.post('/admin/cleanup', express.json(), (req, res) => {
     
     res.json({
         message: 'クリーンアップ完了にゃ',
-        version: '1.2.1',
+        version: '1.3.0',
         timestamp: new Date().toISOString(),
         before,
         after,
@@ -1203,11 +1178,11 @@ app.post('/admin/cleanup', express.json(), (req, res) => {
     });
 });
 
-// テストエンドポイント
 app.get('/test', (req, res) => {
     res.json({
-        message: 'つきみv1.2.2はキーワード方式で確実実行できるようになりましたにゃ！',
-        version: '1.2.2',
+        message: 'つきみv1.3.0はAI終了度判定で賢く進化しましたにゃ！',
+        version: '1.3.0',
+        timestamp: new Date().toISOString(),
         webhook_url: req.get('host') + '/webhook',
         environment_check: {
             line_secret: !!process.env.LINE_CHANNEL_SECRET,
@@ -1226,7 +1201,7 @@ app.get('/test', (req, res) => {
 // サーバー開始
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log('🐱⛩️ つきみv1.2.1（猫神主Bot）が起動しました ⛩️🐱');
+    console.log('🐱⛩️ つきみv1.3.0（猫神主Bot）が起動しました ⛩️🐱');
     console.log(`ポート: ${PORT}`);
     console.log(`環境: ${process.env.NODE_ENV || 'development'}`);
     console.log('');
@@ -1236,20 +1211,22 @@ app.listen(PORT, () => {
     console.log(`セッション時間: ${LIMITS.SESSION_TIMEOUT / 60000}分`);
     console.log(`クリーンアップ間隔: ${LIMITS.CLEANUP_INTERVAL / 60000}分`);
     console.log('');
-    console.log('=== 🚨 v1.2.1 致命的バグ修正完了 ===');
-    console.log('• ✅ アンケート提案: 10分→30分に検出時間延長');
-    console.log('• ✅ 日次制限: dailyUsage誤削除を完全修正');
+    console.log('=== 🧠 v1.3.0 AI終了度判定システム ===');
+    console.log('• ✅ AIによる柔軟な会話終了判定');
+    console.log('• ✅ キーワード依存から文脈理解へ進化');
+    console.log('• ✅ 「一旦大丈夫」「また今度」等も確実に捕捉');
+    console.log('• ✅ アドバイス表現をより優しく調整');
     console.log('====================================');
     console.log('');
     console.log('=== 🎯 PMF検証項目 ===');
     console.log('• お焚き上げ利用率: 目標30%以上');
     console.log('• 平均相談ターン数: 目標+2-3ターン');
     console.log('• ユーザー継続率: 翌日再利用率');
-    console.log('• 会話品質: v1.2.1で致命的バグ修正完了');
+    console.log('• 会話品質: v1.3.0でAI終了度判定搭載');
     console.log('========================');
     console.log('');
-    console.log('つきみがv1.2.1で神社でお待ちしていますにゃ... 🐾');
-
+    console.log('つきみがv1.3.0で神社でお待ちしていますにゃ... 🐾');
+    
     // 起動時の環境変数チェック
     const requiredEnvs = ['LINE_CHANNEL_SECRET', 'LINE_CHANNEL_ACCESS_TOKEN', 'OPENAI_API_KEY'];
     const missingEnvs = requiredEnvs.filter(env => !process.env[env]);
@@ -1259,6 +1236,13 @@ app.listen(PORT, () => {
         console.error('Renderの環境変数設定を確認してください');
     } else {
         console.log('✅ 環境変数設定完了');
-        console.log('✅ v1.2.0 Priority 1修正版準備完了');
+        console.log('✅ v1.3.0 AI終了度判定システム準備完了');
+        console.log('');
+        console.log('🧠 新しいAI終了度判定システム:');
+        console.log('  AIが文脈を理解して会話終了度を0-2で判定');
+        console.log('  ENDING_LEVEL: 2で自動的にお焚き上げ提案');
+        console.log('  「一旦大丈夫」「また今度」等も確実に捕捉');
+        console.log('');
+        console.log('🎉 つきみv1.3.0は人間らしい判断ができるようになりました！');
     }
 });
