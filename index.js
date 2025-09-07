@@ -268,12 +268,12 @@ function shouldExecutePurificationByKeyword(message) {
     return false;
 }
 
-// アンケート提案判定
 function shouldSuggestAnkete(userId, history, userMessage) {
     const lastPurification = purificationHistory.get(userId);
     if (lastPurification) {
         const minutesSince = (Date.now() - lastPurification) / (1000 * 60);
         
+        // お焚き上げ直後（30分以内）の感謝表現をチェック
         if (minutesSince < 30) {
             const thankfulKeywords = [
                 'ありがとう', 'ありがとございます', 'ありがとうございました',
@@ -288,16 +288,22 @@ function shouldSuggestAnkete(userId, history, userMessage) {
             }
         }
         
+        // 1時間以内なら他の条件もチェック
         if (minutesSince < 60) return true;
     }
     
-    const endingKeywords = [
-        'スッキリ', 'すっきり', '楽になった', '軽くなった', 
-        '話せてよかった', '聞いてくれて', 'おかげで', '助かった', 
-        '気が楽に', '安心した', '落ち着いた', '整理できた'
-    ];
+    // 履歴がある場合の従来の判定（history.length >= 3の条件を削除）
+    if (history.length > 0) {
+        const endingKeywords = [
+            'スッキリ', 'すっきり', '楽になった', '軽くなった', 
+            '話せてよかった', '聞いてくれて', 'おかげで', '助かった', 
+            '気が楽に', '安心した', '落ち着いた', '整理できた'
+        ];
+        
+        return endingKeywords.some(keyword => userMessage.includes(keyword));
+    }
     
-    return endingKeywords.some(keyword => userMessage.includes(keyword));
+    return false;
 }
 
 // メッセージ生成関数
