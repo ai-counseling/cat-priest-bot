@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const line = require('@line/bot-sdk');
 const OpenAI = require('openai');
+const path = require('path');
 
 const app = express();
 
@@ -825,6 +826,11 @@ async function handleEvent(event) {
         }
     }
 }
+
+// 利用規約ページ
+app.get('/terms', (req, res) => {
+    res.sendFile(path.join(__dirname, 'terms.html'));
+});
 
 // 管理機能エンドポイント
 app.get('/', (req, res) => {
