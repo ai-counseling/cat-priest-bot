@@ -288,11 +288,19 @@ function shouldSuggestAnkete(userId, history, userMessage) {
             }
         }
         
-        // 1時間以内なら他の条件もチェック
-        if (minutesSince < 60) return true;
+        // 30分～1時間以内の場合は他の条件をチェック
+        if (minutesSince >= 30 && minutesSince < 60) {
+            const endingKeywords = [
+                'スッキリ', 'すっきり', '楽になった', '軽くなった', 
+                '話せてよかった', '聞いてくれて', 'おかげで', '助かった', 
+                '気が楽に', '安心した', '落ち着いた', '整理できた'
+            ];
+            
+            return endingKeywords.some(keyword => userMessage.includes(keyword));
+        }
     }
     
-    // 履歴がある場合の従来の判定（history.length >= 3の条件を削除）
+    // 履歴がある場合の従来の判定
     if (history.length > 0) {
         const endingKeywords = [
             'スッキリ', 'すっきり', '楽になった', '軽くなった', 
