@@ -650,8 +650,10 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
 });
 
 // メインイベント処理
+// メインイベント処理
 async function handleEvent(event) {
     if (event.type !== 'message' || event.message.type !== 'text') {
+        console.log(`🔍 イベントスキップ: type=${event.type}, messageType=${event.message?.type}`);
         return;
     }
     
@@ -660,29 +662,45 @@ async function handleEvent(event) {
     const replyToken = event.replyToken;
     
     try {
+        console.log(`🔍 handleEvent処理開始: ${userId.substring(0, 8)} - "${userMessage}"`);
+        
+        // プロフィール取得
+        console.log(`🔍 プロフィール取得開始...`);
         const profile = await getUserProfile(userId, client);
         const userName = profile?.displayName;
+        console.log(`✅ プロフィール取得完了: ${userName || 'Unknown'}`);
         
-        console.log(`メッセージ受信: ${userName || 'Unknown'} (${userId.substring(0, 8)}...) - "${userMessage}"`);
-        
+        // ユーザーセッション制限チェック
+        console.log(`🔍 ユーザーセッション制限チェック開始 (現在: ${userSessions.size}/${LIMITS.MAX_USERS})`);
         if (!userSessions.has(userId) && userSessions.size >= LIMITS.MAX_USERS) {
+            console.log(`❌ 最大ユーザー数制限に達したため拒否: ${userSessions.size}/${LIMITS.MAX_USERS}`);
             await client.replyMessage(replyToken, {
                 type: 'text',
                 text: SYSTEM_MESSAGES.maxUsersReached
             });
+            console.log(`✅ 制限メッセージ送信完了`);
             return;
         }
         
+        // セッション管理
         userSessions.add(userId);
         lastMessageTime.set(userId, Date.now());
+        console.log(`✅ ユーザーセッション更新完了`);
         
+        // お焚き上げキーワードチェック
+        console.log(`🔍 お焚き上げキーワードチェック開始...`);
         if (shouldExecutePurificationByKeyword(userMessage)) {
-            console.log('🔥 指定キーワード検出 - お焚き上げ実行');
+            console.log('🔥 指定キーワード検出 - お焚き上げ実行開始');
             await executePurification(userId, replyToken, client);
+            console.log(`✅ お焚き上げ実行完了`);
             return;
         }
+        console.log(`✅ お焚き上げキーワードチェック完了（該当なし）`);
         
+        // 日次制限チェック
+        console.log(`🔍 日次制限チェック開始...`);
         if (!checkDailyLimit(userId)) {
+            console.log(`❌ 日次制限に達したため拒否`);
             const conversationCount = conversationHistory.get(userId)?.length || 0;
             const useNameInResponse = shouldUseName(conversationCount);
             
@@ -690,46 +708,65 @@ async function handleEvent(event) {
                 type: 'text',
                 text: SYSTEM_MESSAGES.dailyLimitReached(userName, useNameInResponse)
             });
+            console.log(`✅ 日次制限メッセージ送信完了`);
             return;
         }
+        console.log(`✅ 日次制限チェック完了（制限内）`);
         
+        // 会話履歴取得
         let history = conversationHistory.get(userId) || [];
         const conversationCount = history.length + 1;
         const useNameInResponse = shouldUseName(conversationCount);
+        console.log(`🔍 会話履歴取得完了: ${history.length}件, 名前使用: ${useNameInResponse}`);
         
+        // 初回ユーザー処理
         if (history.length === 0) {
+            console.log(`🔍 初回ユーザー処理開始...`);
             const welcomeMessage = SYSTEM_MESSAGES.welcome(userName, useNameInResponse);
             
             await client.replyMessage(replyToken, {
                 type: 'text',
                 text: welcomeMessage
             });
+            console.log(`✅ ウェルカムメッセージ送信完了`);
             
             history.push({ role: 'assistant', content: welcomeMessage });
             conversationHistory.set(userId, history);
             updateDailyMetrics(userId, 'turn');
+            console.log(`✅ 初回ユーザー処理完了`);
             return;
         }
         
+        // AI応答生成
+        console.log(`🔍 AI応答生成開始...`);
         const aiResponse = await generateAIResponse(userMessage, history, userId, client);
+        console.log(`✅ AI応答生成完了: "${aiResponse.substring(0, 50)}${aiResponse.length > 50 ? '...' : ''}"`);
         
-        console.log(`AI応答生成完了: "${aiResponse}"`);
-        
+        // 最終応答構築
+        console.log(`🔍 最終応答構築開始...`);
         let finalResponse = aiResponse;
+        
+        // お焚き上げ提案チェック
         if (shouldSuggestPurificationFromResponse(aiResponse, userMessage, userId, history)) {
-            console.log('🔥 応答分析でお焚き上げ提案');
+            console.log('🔥 応答分析でお焚き上げ提案追加');
             finalResponse = aiResponse + "\n\n" + getPurificationSuggestion(userName, useNameInResponse);
         } else if (shouldSuggestAnkete(userId, history, userMessage)) {
+            console.log('📋 アンケート提案追加');
             finalResponse = aiResponse + "\n\n" + getAnketeSuggestion(userName, useNameInResponse);
-        }        
+        }
+        console.log(`✅ 最終応答構築完了`);
         
+        // 使用回数更新・残り回数表示
         const usageCount = updateDailyUsage(userId);
         const remaining = LIMITS.DAILY_TURN_LIMIT - usageCount;
+        console.log(`🔍 使用回数更新: ${usageCount}/${LIMITS.DAILY_TURN_LIMIT} (残り${remaining}回)`);
         
         if (remaining <= 3) {
             finalResponse += "\n\n" + SYSTEM_MESSAGES.remainingTurns(remaining, userName, useNameInResponse);
+            console.log(`⚠️ 残り回数警告追加 (残り${remaining}回)`);
         }
         
+        // 会話履歴更新
         history.push(
             { role: 'user', content: userMessage },
             { role: 'assistant', content: aiResponse }
@@ -737,27 +774,46 @@ async function handleEvent(event) {
         
         if (history.length > 20) {
             history = history.slice(-20);
+            console.log(`🔄 会話履歴トリム実行 (20件に制限)`);
         }
         
         conversationHistory.set(userId, history);
         updateDailyMetrics(userId, 'turn');
+        console.log(`✅ 会話履歴更新完了`);
         
+        // 応答送信
+        console.log(`🔍 応答送信開始...`);
         await client.replyMessage(replyToken, {
             type: 'text',
             text: finalResponse
         });
-        
-        console.log(`応答送信完了: ${userName || 'Unknown'} (${userId.substring(0, 8)}...)`);
+        console.log(`✅ 応答送信完了: ${userName || 'Unknown'} (${userId.substring(0, 8)}...) - レスポンス長=${finalResponse.length}文字`);
         
     } catch (error) {
-        console.error('メッセージ処理エラー:', error);
+        console.error(`❌ handleEvent エラー詳細:`, {
+            userId: userId.substring(0, 8),
+            userName: await getUserProfile(userId, client).then(p => p?.displayName).catch(() => 'Unknown'),
+            message: userMessage,
+            replyToken: replyToken,
+            errorMessage: error.message,
+            errorStack: error.stack,
+            timestamp: new Date().toISOString()
+        });
+        
         try {
+            console.log(`🔍 エラー応答送信試行...`);
             await client.replyMessage(replyToken, {
                 type: 'text',
                 text: "申し訳ございません。お話を聞く準備ができませんでした。少し時間をおいてからもう一度お参りくださいにゃ 🙏"
             });
+            console.log(`✅ エラー応答送信完了`);
         } catch (replyError) {
-            console.error('エラー応答送信失敗:', replyError);
+            console.error('❌ エラー応答送信も失敗:', {
+                originalError: error.message,
+                replyError: replyError.message,
+                userId: userId.substring(0, 8),
+                timestamp: new Date().toISOString()
+            });
         }
     }
 }
