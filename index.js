@@ -270,10 +270,13 @@ function shouldExecutePurificationByKeyword(message) {
 
 function shouldSuggestAnkete(userId, history, userMessage) {
     const lastPurification = purificationHistory.get(userId);
+    
+    // お焚き上げ履歴がある場合
     if (lastPurification) {
         const minutesSince = (Date.now() - lastPurification) / (1000 * 60);
+        console.log(`🔍 アンケート判定: userId=${userId.substring(0,8)}, minutesSince=${minutesSince.toFixed(1)}, message="${userMessage}"`);
         
-        // お焚き上げ直後（30分以内）の感謝表現をチェック
+        // 30分以内の感謝表現チェック
         if (minutesSince < 30) {
             const thankfulKeywords = [
                 'ありがとう', 'ありがとございます', 'ありがとうございました',
@@ -283,34 +286,39 @@ function shouldSuggestAnkete(userId, history, userMessage) {
                 '軽くなった', '楽になった', 'よかった'
             ];
             
-            if (thankfulKeywords.some(keyword => userMessage.includes(keyword))) {
-                return true;
-            }
+            const hasThankfulKeyword = thankfulKeywords.some(keyword => userMessage.includes(keyword));
+            console.log(`🔍 30分以内感謝キーワードチェック: ${hasThankfulKeyword}`);
+            return hasThankfulKeyword;
         }
         
-        // 30分～1時間以内の場合は他の条件をチェック
-        if (minutesSince >= 30 && minutesSince < 60) {
+        // 30分～1時間以内の終了表現チェック
+        if (minutesSince < 60) {
             const endingKeywords = [
                 'スッキリ', 'すっきり', '楽になった', '軽くなった', 
                 '話せてよかった', '聞いてくれて', 'おかげで', '助かった', 
                 '気が楽に', '安心した', '落ち着いた', '整理できた'
             ];
             
-            return endingKeywords.some(keyword => userMessage.includes(keyword));
+            const hasEndingKeyword = endingKeywords.some(keyword => userMessage.includes(keyword));
+            console.log(`🔍 1時間以内終了キーワードチェック: ${hasEndingKeyword}`);
+            return hasEndingKeyword;
         }
     }
     
-    // 履歴がある場合の従来の判定
-    if (history.length > 0) {
+    // 通常の会話での終了表現チェック
+    if (history.length >= 3) {
         const endingKeywords = [
             'スッキリ', 'すっきり', '楽になった', '軽くなった', 
             '話せてよかった', '聞いてくれて', 'おかげで', '助かった', 
             '気が楽に', '安心した', '落ち着いた', '整理できた'
         ];
         
-        return endingKeywords.some(keyword => userMessage.includes(keyword));
+        const hasEndingKeyword = endingKeywords.some(keyword => userMessage.includes(keyword));
+        console.log(`🔍 通常会話終了キーワードチェック: ${hasEndingKeyword}`);
+        return hasEndingKeyword;
     }
     
+    console.log(`🔍 アンケート判定: 該当なし`);
     return false;
 }
 
@@ -720,7 +728,7 @@ async function handleEvent(event) {
         console.log(`🔍 会話履歴取得完了: ${history.length}件, 名前使用: ${useNameInResponse}`);
         
         // 初回ユーザー処理
-        if (history.length === 0) {
+         if (history.length === 0 && !userProfiles.has(userId)) {
             console.log(`🔍 初回ユーザー処理開始...`);
             const welcomeMessage = SYSTEM_MESSAGES.welcome(userName, useNameInResponse);
             
