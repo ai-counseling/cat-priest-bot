@@ -270,8 +270,6 @@ function shouldExecutePurificationByKeyword(message) {
 
 // アンケート提案判定
 function shouldSuggestAnkete(userId, history, userMessage) {
-    if (history.length < 3) return false;
-    
     const lastPurification = purificationHistory.get(userId);
     if (lastPurification) {
         const minutesSince = (Date.now() - lastPurification) / (1000 * 60);
