@@ -846,7 +846,7 @@ async function handleEvent(event) {
         console.log(`🔍 会話履歴取得完了: ${history.length}件, 名前使用: ${useNameInResponse}`);
         
         // 初回ユーザー処理
-         if (history.length === 0 && !userProfiles.has(userId)) {
+        if (history.length === 0) {
             console.log(`🔍 初回ユーザー処理開始...`);
             const welcomeMessage = SYSTEM_MESSAGES.welcome(userName, useNameInResponse);
             
