@@ -561,25 +561,6 @@ function updateDailyMetrics(userId, action) {
         });
     }
     
-    const todayStats = stats.dailyMetrics.get(today);
-    todayStats.users.add(userId);
-    stats.totalUsers.add(userId);
-    
-    switch (action) {
-        case 'turn':
-            todayStats.turns++;
-            stats.dailyTurns++;
-            stats.totalTurns++;
-            break;
-        case 'purification':
-            todayStats.purifications++;
-            stats.purificationCount++;
-            break;
-    }
-    
-    saveUsageData(); // 統計更新時も保存
-}
-
 function checkDailyLimit(userId) {
     const today = getJSTDate();
     const usage = dailyUsage.get(userId) || { date: '', count: 0 };
