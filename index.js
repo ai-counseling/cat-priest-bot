@@ -561,40 +561,7 @@ function updateDailyMetrics(userId, action) {
         });
     }
     
-function checkDailyLimit(userId) {
-    const today = getJSTDate();
-    const usage = dailyUsage.get(userId) || { date: '', count: 0 };
-    
-    console.log(`🔍 制限チェック: userId=${userId.substring(0,8)}, today=${today}, usage.date=${usage.date}, count=${usage.count}`);
-    
-    if (usage.date !== today) {
-        console.log(`📅 日付変更検出: ${usage.date} → ${today} (リセット)`);
-        usage.date = today;
-        usage.count = 0;
-        dailyUsage.set(userId, usage);
-        saveUsageData();
-    }
-    
-    const withinLimit = usage.count < LIMITS.DAILY_TURN_LIMIT;
-    console.log(`✅ 制限判定: ${usage.count}/${LIMITS.DAILY_TURN_LIMIT} = ${withinLimit ? '許可' : '拒否'}`);
-    return withinLimit;
-}
-function updateDailyUsage(userId) {
-    const today = getJSTDate();
-    const usage = dailyUsage.get(userId) || { date: today, count: 0 };
-    usage.count++;
-    dailyUsage.set(userId, usage);
-    saveUsageData(); // 即座に保存
-    
-    console.log(`📈 使用量更新: ${userId.substring(0,8)} - ${usage.count}/${LIMITS.DAILY_TURN_LIMIT}`);
-    return usage.count;
-}
 
-function getRemainingTurns(userId) {
-    const today = getJSTDate();
-    const usage = dailyUsage.get(userId) || { date: today, count: 0 };
-    return LIMITS.DAILY_TURN_LIMIT - usage.count;
-}
 
 
     const todayStats = stats.dailyMetrics.get(today);
@@ -770,8 +737,41 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
         res.status(200).end();
     }
 });
+function checkDailyLimit(userId) {
+    const today = getJSTDate();
+    const usage = dailyUsage.get(userId) || { date: '', count: 0 };
+    
+    console.log(`🔍 制限チェック: userId=${userId.substring(0,8)}, today=${today}, usage.date=${usage.date}, count=${usage.count}`);
+    
+    if (usage.date !== today) {
+        console.log(`📅 日付変更検出: ${usage.date} → ${today} (リセット)`);
+        usage.date = today;
+        usage.count = 0;
+        dailyUsage.set(userId, usage);
+        saveUsageData();
+    }
+    
+    const withinLimit = usage.count < LIMITS.DAILY_TURN_LIMIT;
+    console.log(`✅ 制限判定: ${usage.count}/${LIMITS.DAILY_TURN_LIMIT} = ${withinLimit ? '許可' : '拒否'}`);
+    return withinLimit;
+}
+function updateDailyUsage(userId) {
+    const today = getJSTDate();
+    const usage = dailyUsage.get(userId) || { date: today, count: 0 };
+    usage.count++;
+    dailyUsage.set(userId, usage);
+    saveUsageData(); // 即座に保存
+    
+    console.log(`📈 使用量更新: ${userId.substring(0,8)} - ${usage.count}/${LIMITS.DAILY_TURN_LIMIT}`);
+    return usage.count;
+}
 
-// メインイベント処理
+function getRemainingTurns(userId) {
+    const today = getJSTDate();
+    const usage = dailyUsage.get(userId) || { date: today, count: 0 };
+    return LIMITS.DAILY_TURN_LIMIT - usage.count;
+}
+
 // メインイベント処理
 async function handleEvent(event) {
     if (event.type !== 'message' || event.message.type !== 'text') {
