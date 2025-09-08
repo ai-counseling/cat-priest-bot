@@ -3,6 +3,107 @@ require('dotenv').config();
 const express = require('express');
 const line = require('@line/bot-sdk');
 const OpenAI = require('openai');
+const fs = require('fs');
+const path = require('path');
+
+const DATA_FILE = path.join(__dirname, 'usage_data.json');
+
+// JST日付取得関数
+function getJSTDate() {
+    return new Date(Date.now() + (9 * 60 * 60 * 1000)).toISOString().split('T')[0];
+}
+
+// データ保存関数
+function saveUsageData() {
+    try {
+        const data = {
+            dailyUsage: Array.from(dailyUsage.entries()),
+            userSessions: Array.from(userSessions),
+            purificationHistory: Array.from(purificationHistory.entries()),
+            stats: {
+                totalUsers: Array.from(stats.totalUsers),
+                dailyTurns: stats.dailyTurns,
+                totalTurns: stats.totalTurns,
+                purificationCount: stats.purificationCount,
+                dailyMetrics: Array.from(stats.dailyMetrics.entries()).map(([date, metrics]) => [
+                    date,
+                    {
+                        users: Array.from(metrics.users),
+                        turns: metrics.turns,
+                        purifications: metrics.purifications
+                    }
+                ])
+            },
+            timestamp: new Date().toISOString()
+        };
+        fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+        console.log(`💾 データ保存完了: ${new Date().toLocaleString('ja-JP')}`);
+    } catch (error) {
+        console.error('❌ データ保存エラー:', error.message);
+    }
+}
+
+// データ読み込み関数
+function loadUsageData() {
+    try {
+        if (!fs.existsSync(DATA_FILE)) {
+            console.log('🆕 初回起動 - 新規データファイルを作成します');
+            saveUsageData();
+            return;
+        }
+
+        const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        
+        // dailyUsage復元
+        dailyUsage.clear();
+        if (data.dailyUsage) {
+            data.dailyUsage.forEach(([userId, usage]) => {
+                dailyUsage.set(userId, usage);
+            });
+        }
+        
+        // userSessions復元
+        userSessions.clear();
+        if (data.userSessions) {
+            data.userSessions.forEach(userId => userSessions.add(userId));
+        }
+        
+        // purificationHistory復元
+        purificationHistory.clear();
+        if (data.purificationHistory) {
+            data.purificationHistory.forEach(([userId, timestamp]) => {
+                purificationHistory.set(userId, timestamp);
+            });
+        }
+        
+        // stats復元
+        if (data.stats) {
+            stats.totalUsers = new Set(data.stats.totalUsers || []);
+            stats.dailyTurns = data.stats.dailyTurns || 0;
+            stats.totalTurns = data.stats.totalTurns || 0;
+            stats.purificationCount = data.stats.purificationCount || 0;
+            
+            stats.dailyMetrics.clear();
+            if (data.stats.dailyMetrics) {
+                data.stats.dailyMetrics.forEach(([date, metrics]) => {
+                    stats.dailyMetrics.set(date, {
+                        users: new Set(metrics.users || []),
+                        turns: metrics.turns || 0,
+                        purifications: metrics.purifications || 0
+                    });
+                });
+            }
+        }
+        
+        console.log(`✅ データ復元完了: ユーザー${dailyUsage.size}名, セッション${userSessions.size}件`);
+        console.log(`📊 統計: 総利用者${stats.totalUsers.size}名, 総ターン${stats.totalTurns}回, お焚き上げ${stats.purificationCount}回`);
+        
+    } catch (error) {
+        console.error('❌ データ読み込みエラー:', error.message);
+        console.log('🔄 初期状態で開始します');
+        saveUsageData();
+    }
+}
 
 const app = express();
 
@@ -450,7 +551,7 @@ async function executePurification(userId, replyToken, client) {
 
 // 統計・制限管理
 function updateDailyMetrics(userId, action) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getJSTDate();
     
     if (!stats.dailyMetrics.has(today)) {
         stats.dailyMetrics.set(today, {
@@ -475,33 +576,63 @@ function updateDailyMetrics(userId, action) {
             stats.purificationCount++;
             break;
     }
+    
+    saveUsageData(); // 統計更新時も保存
 }
 
 function checkDailyLimit(userId) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getJSTDate();
     const usage = dailyUsage.get(userId) || { date: '', count: 0 };
     
+    console.log(`🔍 制限チェック: userId=${userId.substring(0,8)}, today=${today}, usage.date=${usage.date}, count=${usage.count}`);
+    
     if (usage.date !== today) {
+        console.log(`📅 日付変更検出: ${usage.date} → ${today} (リセット)`);
         usage.date = today;
         usage.count = 0;
         dailyUsage.set(userId, usage);
+        saveUsageData();
     }
     
-    return usage.count < LIMITS.DAILY_TURN_LIMIT;
+    const withinLimit = usage.count < LIMITS.DAILY_TURN_LIMIT;
+    console.log(`✅ 制限判定: ${usage.count}/${LIMITS.DAILY_TURN_LIMIT} = ${withinLimit ? '許可' : '拒否'}`);
+    return withinLimit;
 }
-
 function updateDailyUsage(userId) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getJSTDate();
     const usage = dailyUsage.get(userId) || { date: today, count: 0 };
     usage.count++;
     dailyUsage.set(userId, usage);
+    saveUsageData(); // 即座に保存
+    
+    console.log(`📈 使用量更新: ${userId.substring(0,8)} - ${usage.count}/${LIMITS.DAILY_TURN_LIMIT}`);
     return usage.count;
 }
 
 function getRemainingTurns(userId) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getJSTDate();
     const usage = dailyUsage.get(userId) || { date: today, count: 0 };
     return LIMITS.DAILY_TURN_LIMIT - usage.count;
+}
+
+
+    const todayStats = stats.dailyMetrics.get(today);
+    todayStats.users.add(userId);
+    stats.totalUsers.add(userId);
+    
+    switch (action) {
+        case 'turn':
+            todayStats.turns++;
+            stats.dailyTurns++;
+            stats.totalTurns++;
+            break;
+        case 'purification':
+            todayStats.purifications++;
+            stats.purificationCount++;
+            break;
+    }
+    
+    saveUsageData(); // 統計更新時も保存
 }
 
 // OpenAI応答生成
@@ -693,8 +824,10 @@ async function handleEvent(event) {
         }
         
         // セッション管理
-        userSessions.add(userId);
-        lastMessageTime.set(userId, Date.now());
+      userSessions.add(userId);
+      console.log(`👥 セッション管理: ${userSessions.size}/${LIMITS.MAX_USERS}名`);
+      saveUsageData();
+      lastMessageTime.set(userId, Date.now());
         console.log(`✅ ユーザーセッション更新完了`);
         
         // お焚き上げキーワードチェック
@@ -1266,6 +1399,8 @@ app.get('/test', (req, res) => {
 
 // サーバー開始
 const PORT = process.env.PORT || 3000;
+console.log('使用量データを読み込み中...');
+loadUsageData();
 app.listen(PORT, () => {
     console.log('🐱⛩️ つきみv1.3.1（猫神主Bot）が起動しました ⛩️🐱');
     console.log(`ポート: ${PORT}`);
