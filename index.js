@@ -50,96 +50,27 @@ const airtableBase = new Airtable({
 }).base(process.env.AIRTABLE_BASE_ID);
 
 // 完全修正版: getUserLimitRecord関数
-async function debugAirtableStructure() {
-    try {
-        console.log('🔍 Airtableテーブル構造をデバッグ中...');
-        
-        // 全レコードを取得して構造を確認
-        const records = await airtableBase('user_limits').select({
-            maxRecords: 5
-        }).firstPage();
-        
-        console.log(`📊 テーブル内レコード数: ${records.length}`);
-        
-        if (records.length > 0) {
-            const firstRecord = records[0];
-            console.log('📝 最初のレコードの構造:');
-            console.log('Record ID:', firstRecord.id);
-            console.log('Field names:', Object.keys(firstRecord.fields));
-            console.log('Field values:', firstRecord.fields);
-            
-            // 各フィールドを詳細表示
-            Object.entries(firstRecord.fields).forEach(([key, value]) => {
-                console.log(`  フィールド "${key}": ${value} (型: ${typeof value})`);
-            });
-        }
-        
-        return records.length > 0 ? Object.keys(records[0].fields) : [];
-    } catch (error) {
-        console.error('❌ Airtableデバッグエラー:', error.message);
-        return [];
-    }
-}
-async function getUserLimitRecordFixed(userId) {
+async function getUserLimitRecord(userId) {
     try {
         const today = getJSTDate();
         console.log(`🔍 制限レコード検索開始: userId=${userId.substring(0,8)}, date=${today}`);
         
-        // まずテーブル構造をデバッグ
-        const fieldNames = await debugAirtableStructure();
-        console.log('📋 取得したフィールド名:', fieldNames);
+        // シンプルな検索（sortなし）
+        const records = await airtableBase('user_limits').select({
+            filterByFormula: `AND(user_id="${userId}", date="${today}")`,
+            maxRecords: 1
+        }).firstPage();
         
-        // 複数のフィルターパターンを試行
-        const filterPatterns = [
-            // パターン1: 基本構文
-            `AND(user_id="${userId}", date="${today}")`,
-            // パターン2: 波括弧構文
-            `AND({user_id}="${userId}", {date}="${today}")`,
-            // パターン3: フィールド名に空白がある場合
-            `AND({User ID}="${userId}", {Date}="${today}")`,
-            // パターン4: アンダースコア区切り
-            `AND({user_id}="${userId}", {date}="${today}")`,
-            // パターン5: 単純検索（user_idのみ）
-            `user_id="${userId}"`
-        ];
+        console.log(`📝 検索結果: 見つかったレコード数=${records.length}`);
         
-        for (let i = 0; i < filterPatterns.length; i++) {
-            const pattern = filterPatterns[i];
-            console.log(`🔍 フィルターパターン${i + 1}を試行: ${pattern}`);
-            
-            try {
-                const records = await airtableBase('user_limits').select({
-                    filterByFormula: pattern,
-                    maxRecords: 10,
-                    sort: [{field: fieldNames.includes('last_updated') ? 'last_updated' : fieldNames[fieldNames.length - 1], direction: "desc"}]
-                }).firstPage();
-                
-                console.log(`📝 パターン${i + 1}の結果: ${records.length}件`);
-                
-                if (records.length > 0) {
-                    // 今日のレコードを探す
-                    const todayRecord = records.find(record => {
-                        const recordDate = record.fields.date || record.fields.Date || record.fields['Date'];
-                        return recordDate === today;
-                    });
-                    
-                    if (todayRecord) {
-                        console.log(`✅ 今日のレコード発見: ID=${todayRecord.id}`);
-                        return todayRecord;
-                    }
-                    
-                    // 今日のレコードがない場合、最新のレコード情報を表示
-                    console.log(`📋 既存レコード（別日）:`, records[0].fields);
-                }
-                
-            } catch (filterError) {
-                console.log(`❌ パターン${i + 1}でエラー: ${filterError.message}`);
-                continue;
-            }
+        if (records.length > 0) {
+            const record = records[0];
+            console.log(`✅ 既存レコード発見: ID=${record.id}, カウント=${record.fields.turn_count}`);
+            return record;
+        } else {
+            console.log(`🆕 既存レコードなし - 新規作成が必要`);
+            return null;
         }
-        
-        console.log(`🆕 すべてのパターンで今日のレコードが見つからない - 新規作成が必要`);
-        return null;
         
     } catch (error) {
         console.error('❌ ユーザー制限レコード取得エラー:', error.message);
@@ -148,38 +79,23 @@ async function getUserLimitRecordFixed(userId) {
 }
 
 
-// 完全修正版: createOrUpdateUserLimit関数
-async function createOrUpdateUserLimitFixed(userId, turnCount) {
+// シンプル修正版: createOrUpdateUserLimit関数
+async function createOrUpdateUserLimit(userId, turnCount) {
     try {
         const today = getJSTDate();
         console.log(`🔄 制限レコード更新開始: userId=${userId.substring(0,8)}, newCount=${turnCount}`);
         
-        const existingRecord = await getUserLimitRecordFixed(userId);
+        const existingRecord = await getUserLimitRecord(userId);
         
         if (existingRecord) {
             // 既存レコードを更新
-            const currentCount = existingRecord.fields.turn_count || existingRecord.fields['Turn Count'] || existingRecord.fields.turnCount || 0;
-            console.log(`📝 既存レコード更新: ${currentCount} → ${turnCount}`);
+            console.log(`📝 既存レコード更新: ${existingRecord.fields.turn_count} → ${turnCount}`);
             
-            // フィールド名を動的に決定
-            const updateData = {};
-            if ('turn_count' in existingRecord.fields) {
-                updateData.turn_count = turnCount;
-            } else if ('Turn Count' in existingRecord.fields) {
-                updateData['Turn Count'] = turnCount;
-            } else {
-                updateData.turn_count = turnCount; // デフォルト
-            }
+            const updatedRecord = await airtableBase('user_limits').update(existingRecord.id, {
+                turn_count: turnCount,
+                last_updated: new Date().toISOString()
+            });
             
-            if ('last_updated' in existingRecord.fields) {
-                updateData.last_updated = new Date().toISOString();
-            } else if ('Last Updated' in existingRecord.fields) {
-                updateData['Last Updated'] = new Date().toISOString();
-            } else {
-                updateData.last_updated = new Date().toISOString(); // デフォルト
-            }
-            
-            const updatedRecord = await airtableBase('user_limits').update(existingRecord.id, updateData);
             console.log(`✅ 制限レコード更新完了: ID=${updatedRecord.id}, 新カウント=${turnCount}`);
             return true;
             
@@ -205,21 +121,20 @@ async function createOrUpdateUserLimitFixed(userId, turnCount) {
     }
 }
 
-
-// 完全修正版: updateDailyUsage関数
+// シンプル修正版: updateDailyUsage関数
 async function updateDailyUsage(userId) {
     try {
         console.log(`📊 使用量更新開始: userId=${userId.substring(0,8)}`);
         
         // 現在のカウントを取得
-        const record = await getUserLimitRecordFixed(userId);
-        const currentCount = record ? (record.fields.turn_count || record.fields['Turn Count'] || record.fields.turnCount || 0) : 0;
+        const record = await getUserLimitRecord(userId);
+        const currentCount = record ? record.fields.turn_count : 0;
         const newCount = currentCount + 1;
         
         console.log(`📈 カウント更新: ${currentCount} → ${newCount} (${userId.substring(0,8)})`);
         
         // カウントを更新
-        const success = await createOrUpdateUserLimitFixed(userId, newCount);
+        const success = await createOrUpdateUserLimit(userId, newCount);
         
         if (success) {
             console.log(`✅ 使用量更新成功: ${userId.substring(0,8)} - ${newCount}/${LIMITS.DAILY_TURN_LIMIT}`);
@@ -1004,11 +919,11 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
     }
 });
 
-// 完全修正版: checkDailyLimit関数
+// シンプル修正版: checkDailyLimit関数
 async function checkDailyLimit(userId) {
     try {
-        const record = await getUserLimitRecordFixed(userId);
-        const currentCount = record ? (record.fields.turn_count || record.fields['Turn Count'] || record.fields.turnCount || 0) : 0;
+        const record = await getUserLimitRecord(userId);
+        const currentCount = record ? record.fields.turn_count : 0;
         
         console.log(`🔍 制限チェック: userId=${userId.substring(0,8)}, count=${currentCount}/${LIMITS.DAILY_TURN_LIMIT}`);
         
@@ -1023,7 +938,7 @@ async function checkDailyLimit(userId) {
 
 async function updateDailyUsage(userId) {
     try {
-        const record = await getUserLimitRecordFixed(userId);
+        const record = await getUserLimitRecord(userId);
         const currentCount = record ? record.fields.turn_count : 0;
         const newCount = currentCount + 1;
         
@@ -1040,13 +955,13 @@ async function updateDailyUsage(userId) {
     }
 }
 
-// 完全修正版: getRemainingTurns関数
+// シンプル修正版: getRemainingTurns関数
 async function getRemainingTurns(userId) {
     try {
         console.log(`🔍 残り回数取得: userId=${userId.substring(0,8)}`);
         
-        const record = await getUserLimitRecordFixed(userId);
-        const currentCount = record ? (record.fields.turn_count || record.fields['Turn Count'] || record.fields.turnCount || 0) : 0;
+        const record = await getUserLimitRecord(userId);
+        const currentCount = record ? record.fields.turn_count : 0;
         const remaining = Math.max(0, LIMITS.DAILY_TURN_LIMIT - currentCount);
         
         console.log(`📊 残り回数計算: ${currentCount}使用済み → 残り${remaining}回`);
@@ -1057,7 +972,6 @@ async function getRemainingTurns(userId) {
         return LIMITS.DAILY_TURN_LIMIT;
     }
 }
-
 
 
 // メインイベント処理
