@@ -49,14 +49,18 @@ const airtableBase = new Airtable({
     apiKey: process.env.AIRTABLE_API_KEY
 }).base(process.env.AIRTABLE_BASE_ID);
 
-// Airtable用のヘルパー関数
+// 完全修正版: getUserLimitRecord関数
 async function getUserLimitRecord(userId) {
     try {
         const today = getJSTDate();
         console.log(`🔍 制限レコード検索開始: userId=${userId.substring(0,8)}, date=${today}`);
         
+        // Airtable正式フィルター構文を使用
+        const formula = `AND(user_id="${userId}", date="${today}")`;
+        console.log(`🔍 使用フィルター: ${formula}`);
+        
         const records = await airtableBase('user_limits').select({
-            filterByFormula: `AND({user_id} = '${userId}', {date} = '${today}')`,
+            filterByFormula: formula,
             maxRecords: 1,
             sort: [{field: "last_updated", direction: "desc"}]
         }).firstPage();
@@ -74,12 +78,12 @@ async function getUserLimitRecord(userId) {
         
     } catch (error) {
         console.error('❌ ユーザー制限レコード取得エラー:', error.message);
-        console.error('エラー詳細:', error);
+        console.error('フィルター構文エラー詳細:', error);
         return null;
     }
 }
 
-// 修正版: createOrUpdateUserLimit関数
+// 完全修正版: createOrUpdateUserLimit関数
 async function createOrUpdateUserLimit(userId, turnCount) {
     try {
         const today = getJSTDate();
@@ -121,7 +125,7 @@ async function createOrUpdateUserLimit(userId, turnCount) {
     }
 }
 
-// 修正版: updateDailyUsage関数
+// 完全修正版: updateDailyUsage関数
 async function updateDailyUsage(userId) {
     try {
         console.log(`📊 使用量更新開始: userId=${userId.substring(0,8)}`);
@@ -147,11 +151,11 @@ async function updateDailyUsage(userId) {
     } catch (error) {
         console.error('❌ 使用量更新エラー:', error.message);
         console.error('エラー詳細:', error);
-        // エラー時は現在のカウントを維持
-        const record = await getUserLimitRecord(userId);
-        return record ? record.fields.turn_count : 0;
+        // エラー時は安全な値を返す
+        return 1; // 少なくとも1回は使用したことにする
     }
 }
+
 
 async function addPurificationLog(userId) {
     try {
@@ -207,6 +211,21 @@ async function manageUserSession(userId) {
         userSessions.add(userId);
         lastMessageTime.set(userId, Date.now());
         return userSessions.size <= LIMITS.MAX_USERS;
+    }
+}
+
+// セッション管理の修正版（エラーが出ていた部分）
+async function updateUserSession(userId) {
+    try {
+        await airtableBase('user_sessions').create({
+            user_id: userId,
+            last_activity: new Date().toISOString()
+        });
+        console.log(`📱 セッション記録: ${userId.substring(0,8)}`);
+        return true;
+    } catch (error) {
+        console.error('セッション記録エラー:', error.message);
+        return false;
     }
 }
 
@@ -906,6 +925,8 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
         res.status(200).end();
     }
 });
+
+// 完全修正版: checkDailyLimit関数
 async function checkDailyLimit(userId) {
     try {
         const record = await getUserLimitRecord(userId);
@@ -922,6 +943,7 @@ async function checkDailyLimit(userId) {
         return true;
     }
 }
+
 
 async function updateDailyUsage(userId) {
     try {
@@ -942,6 +964,7 @@ async function updateDailyUsage(userId) {
     }
 }
 
+// 完全修正版: getRemainingTurns関数
 async function getRemainingTurns(userId) {
     try {
         console.log(`🔍 残り回数取得: userId=${userId.substring(0,8)}`);
