@@ -55,10 +55,14 @@ async function getUserLimitRecord(userId) {
         const today = getJSTDate();
         const records = await airtableBase('user_limits').select({
             filterByFormula: `AND({user_id} = "${userId}", {date} = "${today}")`,
-            maxRecords: 1
+            maxRecords: 1,
+            sort: [{field: "last_updated", direction: "desc"}]
         }).firstPage();
         
-        console.log(`🔍 既存レコード検索: userId=${userId.substring(0,8)}, date=${today}, 件数=${records.length}`);
+        console.log(`既存レコード検索: userId=${userId.substring(0,8)}, date=${today}, 見つかった件数=${records.length}`);
+        if (records.length > 0) {
+            console.log(`既存カウント: ${records[0].fields.turn_count}`);
+        }
         
         return records.length > 0 ? records[0] : null;
     } catch (error) {
@@ -66,27 +70,29 @@ async function getUserLimitRecord(userId) {
         return null;
     }
 }
+
 async function createOrUpdateUserLimit(userId, turnCount) {
     try {
         const today = getJSTDate();
+        const existingRecord = await getUserLimitRecord(userId);
         
-        // 既存レコードを削除してから新規作成（確実な方法）
-        const existingRecords = await airtableBase('user_limits').select({
-            filterByFormula: `AND({user_id} = '${userId}', {date} = '${today}')`
-        }).firstPage();
-        
-        // 既存レコードがあれば削除
-        if (existingRecords.length > 0) {
-            await airtableBase('user_limits').destroy(existingRecords.map(r => r.id));
+        if (existingRecord) {
+            // 既存レコードを更新
+            await airtableBase('user_limits').update(existingRecord.id, {
+                turn_count: turnCount,
+                last_updated: new Date().toISOString()
+            });
+            console.log(`制限更新: ${userId.substring(0,8)} - ${turnCount}回 (レコードID: ${existingRecord.id})`);
+        } else {
+            // 新規レコード作成
+            const newRecord = await airtableBase('user_limits').create({
+                user_id: userId,
+                date: today,
+                turn_count: turnCount,
+                last_updated: new Date().toISOString()
+            });
+            console.log(`制限作成: ${userId.substring(0,8)} - ${turnCount}回 (新規レコードID: ${newRecord.id})`);
         }
-        
-        // 新規作成
-        await airtableBase('user_limits').create({
-            user_id: userId,
-            date: today,
-            turn_count: turnCount,
-            last_updated: new Date().toISOString()
-        });
         
         return true;
     } catch (error) {
@@ -95,33 +101,25 @@ async function createOrUpdateUserLimit(userId, turnCount) {
     }
 }
 
-async function updateUserSession(userId) {
+async function updateDailyUsage(userId) {
     try {
-        const records = await airtableBase('user_sessions').select({
-            filterByFormula: `{user_id} = '${userId}'`
-        }).firstPage();
+        const record = await getUserLimitRecord(userId);
+        const currentCount = record ? record.fields.turn_count : 0;
+        const newCount = currentCount + 1;
         
-        const now = new Date().toISOString();
+        console.log(`使用量更新開始: ${userId.substring(0,8)} - 現在${currentCount}回 → ${newCount}回`);
         
-        if (records.length > 0) {
-            // セッション更新
-            await airtableBase('user_sessions').update(records[0].id, {
-                last_activity: now
-            });
+        const success = await createOrUpdateUserLimit(userId, newCount);
+        if (success) {
+            console.log(`使用量更新完了: ${userId.substring(0,8)} - ${newCount}/${LIMITS.DAILY_TURN_LIMIT}`);
+            return newCount;
         } else {
-            // 新規セッション作成
-            await airtableBase('user_sessions').create({
-                user_id: userId,
-                session_start: now,
-                last_activity: now
-            });
-            userSessions.add(userId); // メモリ上のセッション管理も更新
+            console.log(`使用量更新失敗: ${userId.substring(0,8)}`);
+            return currentCount;
         }
-        
-        return true;
     } catch (error) {
-        console.error('セッション更新エラー:', error.message);
-        return false;
+        console.error('使用量更新エラー:', error.message);
+        return 0;
     }
 }
 
