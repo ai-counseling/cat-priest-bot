@@ -5,6 +5,7 @@ const line = require('@line/bot-sdk');
 const OpenAI = require('openai');
 const fs = require('fs');
 const path = require('path');
+const Airtable = require('airtable');
 
 const DATA_FILE = path.join(__dirname, 'usage_data.json');
 
@@ -40,6 +41,143 @@ function saveUsageData() {
         console.log(`💾 データ保存完了: ${new Date().toLocaleString('ja-JP')}`);
     } catch (error) {
         console.error('❌ データ保存エラー:', error.message);
+    }
+}
+
+// Airtable設定（loadUsageData関数の前に追加）
+const airtableBase = new Airtable({
+    apiKey: process.env.AIRTABLE_API_KEY
+}).base(process.env.AIRTABLE_BASE_ID);
+
+// Airtable用のヘルパー関数
+async function getUserLimitRecord(userId) {
+    try {
+        const today = getJSTDate();
+        const records = await airtableBase('user_limits').select({
+            filterByFormula: `AND({user_id} = '${userId}', {date} = '${today}')`
+        }).firstPage();
+        
+        return records.length > 0 ? records[0] : null;
+    } catch (error) {
+        console.error('ユーザー制限レコード取得エラー:', error.message);
+        return null;
+    }
+}
+
+async function createOrUpdateUserLimit(userId, turnCount) {
+    try {
+        const today = getJSTDate();
+        const existingRecord = await getUserLimitRecord(userId);
+        
+        if (existingRecord) {
+            // 更新
+            await airtableBase('user_limits').update(existingRecord.id, {
+                turn_count: turnCount,
+                last_updated: new Date().toISOString()
+            });
+            console.log(`制限更新: ${userId.substring(0,8)} - ${turnCount}回`);
+        } else {
+            // 新規作成
+            await airtableBase('user_limits').create({
+                user_id: userId,
+                date: today,
+                turn_count: turnCount,
+                last_updated: new Date().toISOString()
+            });
+            console.log(`制限作成: ${userId.substring(0,8)} - ${turnCount}回`);
+        }
+        
+        return true;
+    } catch (error) {
+        console.error('ユーザー制限更新エラー:', error.message);
+        return false;
+    }
+}
+
+async function updateUserSession(userId) {
+    try {
+        const records = await airtableBase('user_sessions').select({
+            filterByFormula: `{user_id} = '${userId}'`
+        }).firstPage();
+        
+        const now = new Date().toISOString();
+        
+        if (records.length > 0) {
+            // セッション更新
+            await airtableBase('user_sessions').update(records[0].id, {
+                last_activity: now
+            });
+        } else {
+            // 新規セッション作成
+            await airtableBase('user_sessions').create({
+                user_id: userId,
+                session_start: now,
+                last_activity: now
+            });
+            userSessions.add(userId); // メモリ上のセッション管理も更新
+        }
+        
+        return true;
+    } catch (error) {
+        console.error('セッション更新エラー:', error.message);
+        return false;
+    }
+}
+
+async function addPurificationLog(userId) {
+    try {
+        const purificationId = `purif_${userId}_${Date.now()}`;
+        await airtableBase('purification_log').create({
+            purification_id: purificationId,
+            user_id: userId,
+            timestamp: new Date().toISOString()
+        });
+        
+        console.log(`お焚き上げログ追加: ${userId.substring(0,8)}`);
+        return true;
+    } catch (error) {
+        console.error('お焚き上げログエラー:', error.message);
+        return false;
+    }
+}
+// セッション数カウント用の関数
+async function getActiveSessionCount() {
+    try {
+        const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+        const records = await airtableBase('user_sessions').select({
+            filterByFormula: `{last_activity} > '${thirtyMinutesAgo}'`
+        }).firstPage();
+        
+        return records.length;
+    } catch (error) {
+        console.error('アクティブセッション数取得エラー:', error.message);
+        return userSessions.size; // フォールバック
+    }
+}
+
+// セッション管理の更新
+async function manageUserSession(userId) {
+    try {
+        const sessionCount = await getActiveSessionCount();
+        
+        console.log(`👥 セッション管理: ${sessionCount}/${LIMITS.MAX_USERS}名`);
+        
+        if (sessionCount >= LIMITS.MAX_USERS && !userSessions.has(userId)) {
+            return false; // 新規ユーザーで上限に達している
+        }
+        
+        // セッション更新
+        await updateUserSession(userId);
+        userSessions.add(userId); // メモリ上も更新
+        lastMessageTime.set(userId, Date.now());
+        
+        return true;
+    } catch (error) {
+        console.error('セッション管理エラー:', error.message);
+        // エラー時は従来のメモリベース管理にフォールバック
+        userSessions.add(userId);
+        lastMessageTime.set(userId, Date.now());
+        return userSessions.size <= LIMITS.MAX_USERS;
     }
 }
 
@@ -552,7 +690,7 @@ async function executePurification(userId, replyToken, client) {
 }
 
 // 統計・制限管理
-function updateDailyMetrics(userId, action) {
+async function updateDailyMetrics(userId, action) {
     const today = getJSTDate();
     
     if (!stats.dailyMetrics.has(today)) {
@@ -563,9 +701,6 @@ function updateDailyMetrics(userId, action) {
         });
     }
     
-
-
-
     const todayStats = stats.dailyMetrics.get(today);
     todayStats.users.add(userId);
     stats.totalUsers.add(userId);
@@ -579,10 +714,13 @@ function updateDailyMetrics(userId, action) {
         case 'purification':
             todayStats.purifications++;
             stats.purificationCount++;
+            // お焚き上げログをAirtableに記録
+            await addPurificationLog(userId);
             break;
     }
     
-    saveUsageData(); // 統計更新時も保存
+    // ファイル保存は統計用に維持
+    saveUsageData();
 }
 
 // OpenAI応答生成
@@ -739,39 +877,51 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
         res.status(200).end();
     }
 });
-function checkDailyLimit(userId) {
-    const today = getJSTDate();
-    const usage = dailyUsage.get(userId) || { date: '', count: 0 };
-    
-    console.log(`🔍 制限チェック: userId=${userId.substring(0,8)}, today=${today}, usage.date=${usage.date}, count=${usage.count}`);
-    
-    if (usage.date !== today) {
-        console.log(`📅 日付変更検出: ${usage.date} → ${today} (リセット)`);
-        usage.date = today;
-        usage.count = 0;
-        dailyUsage.set(userId, usage);
-        saveUsageData();
+async function checkDailyLimit(userId) {
+    try {
+        const record = await getUserLimitRecord(userId);
+        const currentCount = record ? record.fields.turn_count : 0;
+        
+        console.log(`🔍 制限チェック: userId=${userId.substring(0,8)}, count=${currentCount}/${LIMITS.DAILY_TURN_LIMIT}`);
+        
+        const withinLimit = currentCount < LIMITS.DAILY_TURN_LIMIT;
+        console.log(`✅ 制限判定: ${currentCount}/${LIMITS.DAILY_TURN_LIMIT} = ${withinLimit ? '許可' : '拒否'}`);
+        return withinLimit;
+    } catch (error) {
+        console.error('制限チェックエラー:', error.message);
+        // エラー時は制限内として扱う（サービス継続性優先）
+        return true;
     }
-    
-    const withinLimit = usage.count < LIMITS.DAILY_TURN_LIMIT;
-    console.log(`✅ 制限判定: ${usage.count}/${LIMITS.DAILY_TURN_LIMIT} = ${withinLimit ? '許可' : '拒否'}`);
-    return withinLimit;
-}
-function updateDailyUsage(userId) {
-    const today = getJSTDate();
-    const usage = dailyUsage.get(userId) || { date: today, count: 0 };
-    usage.count++;
-    dailyUsage.set(userId, usage);
-    saveUsageData(); // 即座に保存
-    
-    console.log(`📈 使用量更新: ${userId.substring(0,8)} - ${usage.count}/${LIMITS.DAILY_TURN_LIMIT}`);
-    return usage.count;
 }
 
-function getRemainingTurns(userId) {
-    const today = getJSTDate();
-    const usage = dailyUsage.get(userId) || { date: today, count: 0 };
-    return LIMITS.DAILY_TURN_LIMIT - usage.count;
+async function updateDailyUsage(userId) {
+    try {
+        const record = await getUserLimitRecord(userId);
+        const currentCount = record ? record.fields.turn_count : 0;
+        const newCount = currentCount + 1;
+        
+        const success = await createOrUpdateUserLimit(userId, newCount);
+        if (success) {
+            console.log(`📈 使用量更新: ${userId.substring(0,8)} - ${newCount}/${LIMITS.DAILY_TURN_LIMIT}`);
+            return newCount;
+        } else {
+            return currentCount;
+        }
+    } catch (error) {
+        console.error('使用量更新エラー:', error.message);
+        return 0;
+    }
+}
+
+async function getRemainingTurns(userId) {
+    try {
+        const record = await getUserLimitRecord(userId);
+        const currentCount = record ? record.fields.turn_count : 0;
+        return Math.max(0, LIMITS.DAILY_TURN_LIMIT - currentCount);
+    } catch (error) {
+        console.error('残り回数取得エラー:', error.message);
+        return LIMITS.DAILY_TURN_LIMIT; // エラー時は最大値を返す
+    }
 }
 
 // メインイベント処理
@@ -807,11 +957,17 @@ async function handleEvent(event) {
         }
         
         // セッション管理
-      userSessions.add(userId);
-      console.log(`👥 セッション管理: ${userSessions.size}/${LIMITS.MAX_USERS}名`);
-      saveUsageData();
-      lastMessageTime.set(userId, Date.now());
-        console.log(`✅ ユーザーセッション更新完了`);
+        const sessionAllowed = await manageUserSession(userId);
+        if (!sessionAllowed) {
+            console.log(`❌ 最大ユーザー数制限に達したため拒否`);
+            await client.replyMessage(replyToken, {
+                type: 'text',
+                text: SYSTEM_MESSAGES.maxUsersReached
+            });
+            console.log(`✅ 制限メッセージ送信完了`);
+            return;
+        }
+console.log(`✅ ユーザーセッション更新完了`);
         
         // お焚き上げキーワードチェック
         console.log(`🔍 お焚き上げキーワードチェック開始...`);
@@ -825,7 +981,7 @@ async function handleEvent(event) {
         
         // 日次制限チェック
         console.log(`🔍 日次制限チェック開始...`);
-        if (!checkDailyLimit(userId)) {
+            if (!(await checkDailyLimit(userId))) {
             console.log(`❌ 日次制限に達したため拒否`);
             const conversationCount = conversationHistory.get(userId)?.length || 0;
             const useNameInResponse = shouldUseName(conversationCount);
@@ -883,7 +1039,7 @@ async function handleEvent(event) {
         console.log(`✅ 最終応答構築完了`);
         
         // 使用回数更新・残り回数表示
-        const usageCount = updateDailyUsage(userId);
+    const usageCount = await updateDailyUsage(userId);
         const remaining = LIMITS.DAILY_TURN_LIMIT - usageCount;
         console.log(`🔍 使用回数更新: ${usageCount}/${LIMITS.DAILY_TURN_LIMIT} (残り${remaining}回)`);
         
@@ -904,7 +1060,7 @@ async function handleEvent(event) {
         }
         
         conversationHistory.set(userId, history);
-        updateDailyMetrics(userId, 'turn');
+        await updateDailyMetrics(userId, 'turn');
         console.log(`✅ 会話履歴更新完了`);
         
         // 応答送信
