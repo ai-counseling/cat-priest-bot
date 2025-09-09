@@ -54,8 +54,11 @@ async function getUserLimitRecord(userId) {
     try {
         const today = getJSTDate();
         const records = await airtableBase('user_limits').select({
-            filterByFormula: `AND({user_id} = '${userId}', {date} = '${today}')`
+            filterByFormula: `AND({user_id} = "${userId}", {date} = "${today}")`,
+            maxRecords: 1
         }).firstPage();
+        
+        console.log(`🔍 既存レコード検索: userId=${userId.substring(0,8)}, date=${today}, 件数=${records.length}`);
         
         return records.length > 0 ? records[0] : null;
     } catch (error) {
@@ -63,7 +66,6 @@ async function getUserLimitRecord(userId) {
         return null;
     }
 }
-
 async function createOrUpdateUserLimit(userId, turnCount) {
     try {
         const today = getJSTDate();
