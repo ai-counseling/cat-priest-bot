@@ -67,25 +67,24 @@ async function getUserLimitRecord(userId) {
 async function createOrUpdateUserLimit(userId, turnCount) {
     try {
         const today = getJSTDate();
-        const existingRecord = await getUserLimitRecord(userId);
         
-        if (existingRecord) {
-            // 更新
-            await airtableBase('user_limits').update(existingRecord.id, {
-                turn_count: turnCount,
-                last_updated: new Date().toISOString()
-            });
-            console.log(`制限更新: ${userId.substring(0,8)} - ${turnCount}回`);
-        } else {
-            // 新規作成
-            await airtableBase('user_limits').create({
-                user_id: userId,
-                date: today,
-                turn_count: turnCount,
-                last_updated: new Date().toISOString()
-            });
-            console.log(`制限作成: ${userId.substring(0,8)} - ${turnCount}回`);
+        // 既存レコードを削除してから新規作成（確実な方法）
+        const existingRecords = await airtableBase('user_limits').select({
+            filterByFormula: `AND({user_id} = '${userId}', {date} = '${today}')`
+        }).firstPage();
+        
+        // 既存レコードがあれば削除
+        if (existingRecords.length > 0) {
+            await airtableBase('user_limits').destroy(existingRecords.map(r => r.id));
         }
+        
+        // 新規作成
+        await airtableBase('user_limits').create({
+            user_id: userId,
+            date: today,
+            turn_count: turnCount,
+            last_updated: new Date().toISOString()
+        });
         
         return true;
     } catch (error) {
