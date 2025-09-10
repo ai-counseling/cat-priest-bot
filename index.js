@@ -694,22 +694,20 @@ function shouldSuggestAnkete(userId, history, userMessage) {
         }
     }
     
-    // 通常の会話での終了表現チェック
-    if (history.length >= 3) {
-        const endingKeywords = [
-            'スッキリ', 'すっきり', '楽になった', '軽くなった', 
-            '話せてよかった', '聞いてくれて', 'おかげで', '助かった', 
-            '気が楽に', '安心した', '落ち着いた', '整理できた'
-        ];
-        
-        const hasEndingKeyword = endingKeywords.some(keyword => userMessage.includes(keyword));
-        console.log(`🔍 通常会話終了キーワードチェック: ${hasEndingKeyword}`);
-        
-        if (hasEndingKeyword) {
-            console.log(`✅ アンケート提案: 通常会話での終了表現を検出`);
-            return true;
-        }
-    }
+// 通常の会話での終了表現チェック（お焚き上げ後も対象に含める）
+const endingKeywords = [
+    'スッキリ', 'すっきり', '楽になった', '軽くなった', 
+    '話せてよかった', '聞いてくれて', 'おかげで', '助かった', 
+    '気が楽に', '安心した', '落ち着いた', '整理できた'
+];
+
+const hasEndingKeyword = endingKeywords.some(keyword => userMessage.includes(keyword));
+console.log(`🔍 通常会話終了キーワードチェック: ${hasEndingKeyword} (履歴長: ${history.length})`);
+
+if (hasEndingKeyword) {
+    console.log(`✅ アンケート提案: 終了表現を検出`);
+    return true;
+}
     
     console.log(`🔍 アンケート判定: 該当なし`);
     return false;
