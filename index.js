@@ -1242,7 +1242,6 @@ console.log(`✅ ユーザーセッション更新完了`);
         
          // 使用回数更新・残り回数表示
         const usageCount = await updateDailyUsage(userId);
-        const usageCount = await updateDailyUsage(userId);
         const remaining = Math.max(0, LIMITS.DAILY_TURN_LIMIT - usageCount);
         console.log(`🔍 使用回数更新: ${usageCount}/${LIMITS.DAILY_TURN_LIMIT} (残り${remaining}回)`);
         
