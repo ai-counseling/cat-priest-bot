@@ -1205,19 +1205,19 @@ console.log(`✅ ユーザーセッション更新完了`);
         
         // 初回ユーザー処理
         if (history.length === 0) {
-            console.log(`🔍 初回ユーザー処理開始...`);
             const welcomeMessage = SYSTEM_MESSAGES.welcome(userName, useNameInResponse);
             
             await client.replyMessage(replyToken, {
                 type: 'text',
                 text: welcomeMessage
             });
-            console.log(`✅ ウェルカムメッセージ送信完了`);
             
             history.push({ role: 'assistant', content: welcomeMessage });
             conversationHistory.set(userId, history);
+            
+            // 初回メッセージもカウントする
+            await updateDailyUsage(userId);
             updateDailyMetrics(userId, 'turn');
-            console.log(`✅ 初回ユーザー処理完了`);
             return;
         }
         
