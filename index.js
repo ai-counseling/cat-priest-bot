@@ -1203,16 +1203,15 @@ console.log(`✅ ユーザーセッション更新完了`);
         }
         console.log(`✅ 最終応答構築完了`);
         
-        // 使用回数更新・残り回数表示
-    const usageCount = await updateDailyUsage(userId);
-        const remaining = LIMITS.DAILY_TURN_LIMIT - usageCount;
+         // 使用回数更新・残り回数表示
+        const usageCount = await updateDailyUsage(userId);
+        const remaining = Math.max(0, LIMITS.DAILY_TURN_LIMIT - usageCount);
         console.log(`🔍 使用回数更新: ${usageCount}/${LIMITS.DAILY_TURN_LIMIT} (残り${remaining}回)`);
         
-        if (remaining <= 3) {
+        if (remaining <= 3 && remaining > 0) {
             finalResponse += "\n\n" + SYSTEM_MESSAGES.remainingTurns(remaining, userName, useNameInResponse);
             console.log(`⚠️ 残り回数警告追加 (残り${remaining}回)`);
-        }
-        
+        }        
         // 会話履歴更新
         history.push(
             { role: 'user', content: userMessage },
