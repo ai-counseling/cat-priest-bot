@@ -966,10 +966,44 @@ const SYSTEM_MESSAGES = {
 };
 
 // クリーンアップ
+// Airtable古いレコード削除関数
+async function cleanupOldAirtableRecords() {
+    try {
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const cutoffDate = sevenDaysAgo.toISOString().split('T')[0];
+        
+        console.log(`🗑️ Airtable古いレコード削除開始: ${cutoffDate}以前のデータを削除`);
+        
+        // 7日以上前のレコードを検索
+        const oldRecords = await airtableBase('user_limits').select({
+            filterByFormula: `date < "${cutoffDate}"`,
+            maxRecords: 100 // 一度に削除する上限
+        }).firstPage();
+        
+        console.log(`📋 削除対象レコード数: ${oldRecords.length}件`);
+        
+        if (oldRecords.length > 0) {
+            // レコードを削除
+            const recordIds = oldRecords.map(record => record.id);
+            await airtableBase('user_limits').destroy(recordIds);
+            
+            console.log(`✅ Airtable古いレコード削除完了: ${oldRecords.length}件削除`);
+        } else {
+            console.log(`📝 削除対象レコードなし`);
+        }
+        
+    } catch (error) {
+        console.error('❌ Airtable古いレコード削除エラー:', error.message);
+    }
+}
+
+// 修正版: cleanupInactiveSessions関数（既存の関数を置き換え）
 function cleanupInactiveSessions() {
     const now = Date.now();
     let cleanedCount = 0;
     
+    // 既存のメモリクリーンアップ
     for (const [userId, timestamp] of lastMessageTime) {
         if (now - timestamp > LIMITS.SESSION_TIMEOUT) {
             conversationHistory.delete(userId);
@@ -1003,6 +1037,9 @@ function cleanupInactiveSessions() {
             stats.dailyMetrics.delete(date);
         }
     }
+    
+    // Airtable古いレコード削除を追加
+    cleanupOldAirtableRecords();
     
     if (cleanedCount > 0) {
         console.log(`🧹 自動クリーンアップ実行: ${cleanedCount}セッション削除`);
