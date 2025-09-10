@@ -788,7 +788,9 @@ async function executePurification(userId, replyToken, client) {
         const conversationCount = conversationHistory.get(userId)?.length || 0;
         const useNameInResponse = shouldUseName(conversationCount);
         
-        purificationHistory.set(userId, Date.now());
+        const purificationTime = Date.now();
+        purificationHistory.set(userId, purificationTime);
+        console.log(`🔥 お焚き上げ履歴記録: userId=${userId.substring(0,8)}, timestamp=${purificationTime}`);
         updateDailyMetrics(userId, 'purification');
         
         console.log(`お焚き上げ開始: ${userName || 'Unknown'} (${userId.substring(0, 8)}...)`);
@@ -1241,6 +1243,19 @@ console.log(`✅ ユーザーセッション更新完了`);
             finalResponse = aiResponse + "\n\n" + getAnketeSuggestion(userName, useNameInResponse);
         }
         console.log(`✅ 最終応答構築完了`);
+        console.log(`🔍 アンケート判定前チェック: purificationHistory.has(${userId.substring(0,8)}) = ${purificationHistory.has(userId)}`);
+        if (purificationHistory.has(userId)) {
+            const lastTime = purificationHistory.get(userId);
+            const minutesSince = (Date.now() - lastTime) / (1000 * 60);
+            console.log(`🔍 お焚き上げ履歴確認: ${minutesSince.toFixed(1)}分前に実行済み`);
+        }
+        
+        if (shouldSuggestAnkete(userId, history, userMessage)) {
+            console.log('📋 アンケート提案追加');
+            finalResponse = aiResponse + "\n\n" + getAnketeSuggestion(userName, useNameInResponse);
+        }
+        
+        // 使用回数更新の処理はこの後に続く
         
          // 使用回数更新・残り回数表示
         const usageCount = await updateDailyUsage(userId);
