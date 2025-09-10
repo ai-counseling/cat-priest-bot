@@ -1206,8 +1206,8 @@ console.log(`✅ ユーザーセッション更新完了`);
         console.log(`🔍 会話履歴取得完了: ${history.length}件, 名前使用: ${useNameInResponse}`);
         
         // 初回ユーザー処理
-        if (history.length === 0) {
-            const welcomeMessage = SYSTEM_MESSAGES.welcome(userName, useNameInResponse);
+        if (history.length === 0 && !purificationHistory.has(userId)) {
+    const welcomeMessage = SYSTEM_MESSAGES.welcome(userName, useNameInResponse);
             
             await client.replyMessage(replyToken, {
                 type: 'text',
