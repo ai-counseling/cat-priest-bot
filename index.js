@@ -436,7 +436,8 @@ function shouldUseName(conversationCount) {
 }
 
 // キャラクター設定
-function getCharacterPersonality(userName, remainingTurns, useNameInResponse) {
+async function getCharacterPersonality(userName, userId, useNameInResponse) {
+    const remainingTurns = await getRemainingTurns(userId);
     const nameDisplay = (userName && useNameInResponse) ? `${userName}さん` : 'あなた';
     return `
 あなたは「つきみ」という名前の神社にいる心優しい猫です。
@@ -536,6 +537,7 @@ function getCharacterPersonality(userName, remainingTurns, useNameInResponse) {
 **重要：テンプレートに頼らず、相手の話の内容と感情に真摯に向き合い、その場面に最も適した自然な言葉で応答すること。つきみらしい温かさは保ちつつ、機械的でない人間味のある会話を心がけ、猫らしい絵文字で親しみやすさを演出してください。🐱💝**
 `;
 }
+
 
 // 語尾処理関数
 function addCatSuffix(message) {
@@ -643,13 +645,16 @@ function shouldExecutePurificationByKeyword(message) {
     return false;
 }
 
+// shouldSuggestAnkete関数の修正版
 function shouldSuggestAnkete(userId, history, userMessage) {
     const lastPurification = purificationHistory.get(userId);
+    
+    console.log(`🔍 アンケート判定開始: userId=${userId.substring(0,8)}, message="${userMessage}"`);
     
     // お焚き上げ履歴がある場合
     if (lastPurification) {
         const minutesSince = (Date.now() - lastPurification) / (1000 * 60);
-        console.log(`🔍 アンケート判定: userId=${userId.substring(0,8)}, minutesSince=${minutesSince.toFixed(1)}, message="${userMessage}"`);
+        console.log(`🔍 お焚き上げからの経過時間: ${minutesSince.toFixed(1)}分`);
         
         // 30分以内の感謝表現チェック
         if (minutesSince < 30) {
@@ -658,12 +663,17 @@ function shouldSuggestAnkete(userId, history, userMessage) {
                 'ありがと', 'あざす', 'サンキュー', 'thanks',
                 '感謝', 'お礼', '感謝します', '感謝しています',
                 'スッキリ', 'すっきり', '清々しい', 'さっぱり',
-                '軽くなった', '楽になった', 'よかった'
+                '軽くなった', '楽になった', 'よかった',
+                '助かった', '助かりました'
             ];
             
             const hasThankfulKeyword = thankfulKeywords.some(keyword => userMessage.includes(keyword));
-            console.log(`🔍 30分以内感謝キーワードチェック: ${hasThankfulKeyword}`);
-            return hasThankfulKeyword;
+            console.log(`🔍 30分以内感謝キーワードチェック: ${hasThankfulKeyword} (キーワード検出: ${thankfulKeywords.filter(k => userMessage.includes(k)).join(', ') || 'なし'})`);
+            
+            if (hasThankfulKeyword) {
+                console.log(`✅ アンケート提案: お焚き上げ後の感謝表現を検出`);
+                return true;
+            }
         }
         
         // 30分～1時間以内の終了表現チェック
@@ -676,7 +686,11 @@ function shouldSuggestAnkete(userId, history, userMessage) {
             
             const hasEndingKeyword = endingKeywords.some(keyword => userMessage.includes(keyword));
             console.log(`🔍 1時間以内終了キーワードチェック: ${hasEndingKeyword}`);
-            return hasEndingKeyword;
+            
+            if (hasEndingKeyword) {
+                console.log(`✅ アンケート提案: お焚き上げ後の終了表現を検出`);
+                return true;
+            }
         }
     }
     
@@ -690,12 +704,17 @@ function shouldSuggestAnkete(userId, history, userMessage) {
         
         const hasEndingKeyword = endingKeywords.some(keyword => userMessage.includes(keyword));
         console.log(`🔍 通常会話終了キーワードチェック: ${hasEndingKeyword}`);
-        return hasEndingKeyword;
+        
+        if (hasEndingKeyword) {
+            console.log(`✅ アンケート提案: 通常会話での終了表現を検出`);
+            return true;
+        }
     }
     
     console.log(`🔍 アンケート判定: 該当なし`);
     return false;
 }
+
 
 // メッセージ生成関数
 function getAnketeSuggestion(userName, useNameInResponse) {
@@ -755,7 +774,8 @@ function isAskingAboutLimits(message) {
     return hasLimitWord && hasQuestionWord;
 }
 
-function getLimitExplanation(remainingTurns, userName, useNameInResponse) {
+// 修正版: getLimitExplanation関数でasync対応
+async function getLimitExplanation(remainingTurns, userName, useNameInResponse) {
     const name = (userName && useNameInResponse) ? `${userName}さん` : 'あなた';
     return `${name}は今日あと${remainingTurns}回まで私とお話しできますにゃ🐱 1日の上限は10回まで となっていて、毎日リセットされるのです🐾 限られた時間だからこそ、大切にお話しを聞かせていただきますね💝✨`;
 }
@@ -855,16 +875,16 @@ async function updateDailyMetrics(userId, action) {
     saveUsageData();
 }
 
-// OpenAI応答生成
+// 修正版: generateAIResponse関数でasync/awaitを正しく処理
 async function generateAIResponse(message, history, userId, client) {
     try {
         const profile = await getUserProfile(userId, client);
         const userName = profile?.displayName;
-        const remainingTurns = getRemainingTurns(userId);
         const conversationCount = history.length + 1;
         const useNameInResponse = shouldUseName(conversationCount);
         
         if (isAskingAboutLimits(message)) {
+            const remainingTurns = await getRemainingTurns(userId);
             return getLimitExplanation(remainingTurns, userName, useNameInResponse);
         }
         
@@ -872,8 +892,11 @@ async function generateAIResponse(message, history, userId, client) {
             return getExplanationResponse();
         }
         
+        // async/awaitで正しく処理
+        const characterPersonality = await getCharacterPersonality(userName, userId, useNameInResponse);
+        
         const messages = [
-            { role: 'system', content: getCharacterPersonality(userName, remainingTurns, useNameInResponse) },
+            { role: 'system', content: characterPersonality },
             ...history,
             { role: 'user', content: message }
         ];
@@ -908,6 +931,7 @@ async function generateAIResponse(message, history, userId, client) {
         return `${userName ? userName + 'さん、' : ''}申し訳ございません。今少し考え事をしていて、うまくお答えできませんでした。もう一度お話しいただけますかにゃ`;
     }
 }
+
 
 // システムメッセージ
 const SYSTEM_MESSAGES = {
