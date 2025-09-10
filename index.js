@@ -884,9 +884,11 @@ async function generateAIResponse(message, history, userId, client) {
         const useNameInResponse = shouldUseName(conversationCount);
         
         if (isAskingAboutLimits(message)) {
-            const remainingTurns = await getRemainingTurns(userId);
-            return getLimitExplanation(remainingTurns, userName, useNameInResponse);
-        }
+    // この質問自体で1回消費されるため、残り回数から1を引く
+    const currentRemaining = await getRemainingTurns(userId);
+    const actualRemaining = Math.max(0, currentRemaining - 1);
+    return getLimitExplanation(actualRemaining, userName, useNameInResponse);
+}
         
         if (isQuestionAboutPurification(message)) {
             return getExplanationResponse();
